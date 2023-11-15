@@ -55,10 +55,25 @@ impl SnapshotProvider {
             highest_tracker: None,
             path: path.as_ref().to_path_buf(),
         };
+        provider.update_indexes()?;
 
         Ok(provider)
     }
+
+    /// Rebuilds the inner block and tx indexes by looking into the directory.
+    ///
+    /// **Should only be called** when we are sure that there are new or updated snapshots, since we
+    /// essentially lock the [`SnapshotProvider`] across all threads.
+    fn update_indexes(&self) -> RethResult<()> {
+        let mut block_index = self.snapshots_block_index.write();
+        let mut tx_index = self.snapshots_tx_index.write();
+        for (segment, block_range, tx_range) in iter_snapshots(&self.path)? {
+            let tx_end = *tx_range.end();
+            block_index.insert(segment, BTreeMap::from([(*block_range.end(), tx_range)]));
+            tx_index.insert(segment, BTreeMap::from([(tx_end, block_range)]));
         }
+
+        Ok(())
     }
 
     /// Adds a highest snapshot tracker to the provider
