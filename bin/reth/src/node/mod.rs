@@ -60,14 +60,14 @@ use reth_primitives::{
     BlockHashOrNumber, BlockNumber, ChainSpec, DisplayHardforks, Head, SealedHeader, B256,
 };
 use reth_provider::{
-    providers::BlockchainProvider, BlockHashReader, BlockReader, CanonStateSubscriptions,
-    HeaderProvider, ProviderFactory, StageCheckpointReader,
+    providers::{BlockchainProvider, HighestSnapshotsTracker},
+    BlockHashReader, BlockReader, CanonStateSubscriptions, HeaderProvider, ProviderFactory,
+    StageCheckpointReader,
 };
 use reth_prune::{segments::SegmentSet, Pruner};
 use reth_revm::Factory;
 use reth_revm_inspectors::stack::Hook;
 use reth_rpc_engine_api::EngineApi;
-use reth_snapshot::HighestSnapshotsTracker;
 use reth_stages::{
     prelude::*,
     stages::{
@@ -308,7 +308,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
 
         // setup the blockchain provider
         let factory = ProviderFactory::new(Arc::clone(&db), Arc::clone(&self.chain))
-            .with_snapshots(data_dir.snapshots_path(), snapshotter.highest_snapshot_receiver());
+            .with_snapshots(data_dir.snapshots_path(), snapshotter.highest_snapshot_tracker())?;
         let blockchain_db = BlockchainProvider::new(factory, blockchain_tree.clone())?;
         let blob_store = InMemoryBlobStore::default();
         let validator = TransactionValidationTaskExecutor::eth_builder(Arc::clone(&self.chain))
@@ -469,7 +469,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             let mut pruner = self.build_pruner(
                 &prune_config,
                 db.clone(),
-                snapshotter.highest_snapshot_receiver(),
+                snapshotter.highest_snapshot_tracker(),
             );
 
             let events = pruner.events();
@@ -958,7 +958,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
         &self,
         config: &PruneConfig,
         db: DB,
-        highest_snapshots_rx: HighestSnapshotsTracker,
+        highest_snapshots_tracker: HighestSnapshotsTracker,
     ) -> Pruner<DB> {
         let segments = SegmentSet::default()
             // Receipts
@@ -995,7 +995,7 @@ impl<Ext: RethCliExt> NodeCommand<Ext> {
             segments.into_vec(),
             config.block_interval,
             self.chain.prune_delete_limit,
-            highest_snapshots_rx,
+            highest_snapshots_tracker,
         )
     }
 

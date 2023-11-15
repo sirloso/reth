@@ -1,7 +1,7 @@
 use crate::{
     providers::{
         state::{historical::HistoricalStateProvider, latest::LatestStateProvider},
-        SnapshotProvider,
+        HighestSnapshotsTracker, SnapshotProvider,
     },
     traits::{BlockSource, ReceiptProvider},
     BlockHashReader, BlockNumReader, BlockReader, ChainSpecProvider, EvmEnvProvider,
@@ -11,7 +11,6 @@ use crate::{
 use reth_db::{database::Database, init_db, models::StoredBlockBodyIndices, DatabaseEnv};
 use reth_interfaces::{db::LogLevel, RethError, RethResult};
 use reth_primitives::{
-    snapshot::HighestSnapshots,
     stage::{StageCheckpoint, StageId},
     Address, Block, BlockHash, BlockHashOrNumber, BlockNumber, BlockWithSenders, ChainInfo,
     ChainSpec, Header, PruneCheckpoint, PruneSegment, Receipt, SealedBlock, SealedHeader,
@@ -24,7 +23,6 @@ use std::{
     path::PathBuf,
     sync::Arc,
 };
-use tokio::sync::watch;
 use tracing::trace;
 
 mod metrics;
@@ -84,13 +82,12 @@ impl<DB> ProviderFactory<DB> {
     pub fn with_snapshots(
         mut self,
         snapshots_path: PathBuf,
-        highest_snapshot_tracker: watch::Receiver<Option<HighestSnapshots>>,
-    ) -> Self {
+        highest_snapshot_tracker: HighestSnapshotsTracker,
+    ) -> RethResult<Self> {
         self.snapshot_provider = Some(Arc::new(
-            SnapshotProvider::new(snapshots_path)
-                .with_highest_tracker(Some(highest_snapshot_tracker)),
+            SnapshotProvider::new(snapshots_path)?.with_highest_tracker(highest_snapshot_tracker),
         ));
-        self
+        Ok(self)
     }
 }
 

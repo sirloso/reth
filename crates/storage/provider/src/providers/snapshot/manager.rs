@@ -1,4 +1,4 @@
-use super::{LoadedJar, SnapshotJarProvider};
+use super::{HighestSnapshotsTracker, LoadedJar, SnapshotJarProvider};
 use crate::{BlockHashReader, BlockNumReader, HeaderProvider, TransactionsProvider};
 use dashmap::DashMap;
 use parking_lot::RwLock;
@@ -9,7 +9,7 @@ use reth_db::{
 use reth_interfaces::{provider::ProviderError, RethResult};
 use reth_nippy_jar::NippyJar;
 use reth_primitives::{
-    snapshot::HighestSnapshots, Address, BlockHash, BlockHashOrNumber, BlockNumber, ChainInfo,
+    snapshot::iter_snapshots, Address, BlockHash, BlockHashOrNumber, BlockNumber, ChainInfo,
     Header, SealedHeader, SnapshotSegment, TransactionMeta, TransactionSigned,
     TransactionSignedNoHash, TxHash, TxNumber, B256, U256,
 };
@@ -19,7 +19,6 @@ use std::{
     ops::{RangeBounds, RangeInclusive},
     path::{Path, PathBuf},
 };
-use tokio::sync::watch;
 
 /// Alias type for a map that can be queried for transaction/block ranges from a block/transaction
 /// segment respectively. It uses `BlockNumber` to represent the block end of a snapshot range or
@@ -41,29 +40,30 @@ pub struct SnapshotProvider {
     /// Available snapshot ranges on disk indexed by max transactions.
     snapshots_tx_index: RwLock<SegmentRanges>,
     /// Tracks the highest snapshot of every segment.
-    highest_tracker: Option<watch::Receiver<Option<HighestSnapshots>>>,
+    highest_tracker: Option<HighestSnapshotsTracker>,
     /// Directory where snapshots are located
     path: PathBuf,
 }
 
 impl SnapshotProvider {
     /// Creates a new [`SnapshotProvider`].
-    pub fn new(path: impl AsRef<Path>) -> Self {
-        Self {
+    pub fn new(path: impl AsRef<Path>) -> RethResult<Self> {
+        let mut provider = Self {
             map: Default::default(),
             snapshots_block_index: Default::default(),
             snapshots_tx_index: Default::default(),
             highest_tracker: None,
             path: path.as_ref().to_path_buf(),
+        };
+
+        Ok(provider)
+    }
         }
     }
 
     /// Adds a highest snapshot tracker to the provider
-    pub fn with_highest_tracker(
-        mut self,
-        highest_tracker: Option<watch::Receiver<Option<HighestSnapshots>>>,
-    ) -> Self {
-        self.highest_tracker = highest_tracker;
+    pub fn with_highest_tracker(mut self, highest_tracker: HighestSnapshotsTracker) -> Self {
+        self.highest_tracker = Some(highest_tracker);
         self
     }
 
@@ -202,9 +202,7 @@ impl SnapshotProvider {
 
     /// Gets the highest snapshot if it exists for a snapshot segment.
     pub fn get_highest_snapshot(&self, segment: SnapshotSegment) -> Option<BlockNumber> {
-        self.highest_tracker
-            .as_ref()
-            .and_then(|tracker| tracker.borrow().and_then(|highest| highest.highest(segment)))
+        self.highest_tracker.as_ref().and_then(|tracker| tracker.read().highest(segment))
     }
 
     /// Iterates through segment snapshots in reverse order, executing a function until it returns

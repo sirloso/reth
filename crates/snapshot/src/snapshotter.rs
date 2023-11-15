@@ -7,15 +7,16 @@ use reth_primitives::{
     snapshot::{iter_snapshots, HighestSnapshots},
     BlockNumber, ChainSpec, TxNumber,
 };
-use reth_provider::{BlockReader, DatabaseProviderRO, ProviderFactory, TransactionsProviderExt};
+use reth_provider::{
+    providers::HighestSnapshotsTracker, BlockReader, DatabaseProviderRO, ProviderFactory,
+    TransactionsProviderExt,
+};
 use std::{
     collections::HashMap,
     ops::RangeInclusive,
     path::{Path, PathBuf},
     sync::Arc,
 };
-use tokio::sync::watch;
-use tracing::warn;
 
 /// Result of [Snapshotter::run] execution.
 pub type SnapshotterResult = Result<SnapshotTargets, SnapshotterError>;
@@ -34,18 +35,11 @@ pub struct Snapshotter<DB> {
     provider_factory: ProviderFactory<DB>,
     /// Directory where snapshots are located
     snapshots_path: PathBuf,
-    /// Highest snapshotted block numbers for each segment
-    highest_snapshots: HighestSnapshots,
-    /// Channel sender to notify other components of the new highest snapshots
-    highest_snapshots_notifier: watch::Sender<Option<HighestSnapshots>>,
     /// Channel receiver to be cloned and shared that already comes with the newest value
-    highest_snapshots_tracker: HighestSnapshotsTracker,
+    highest_snapshots: HighestSnapshotsTracker,
     /// Block interval after which the snapshot is taken.
     block_interval: u64,
 }
-
-/// Tracker for the latest [`HighestSnapshots`] value.
-pub type HighestSnapshotsTracker = watch::Receiver<Option<HighestSnapshots>>;
 
 /// Snapshot targets, per data part, measured in [`BlockNumber`] and [`TxNumber`], if applicable.
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -74,7 +68,7 @@ impl SnapshotTargets {
 
     // Returns `true` if all targets are either [`None`] or has beginning of the range equal to the
     // highest snapshot.
-    fn is_contiguous_to_highest_snapshots(&self, snapshots: HighestSnapshots) -> bool {
+    fn is_contiguous_to_highest_snapshots(&self, snapshots: &HighestSnapshots) -> bool {
         [
             (self.headers.as_ref(), snapshots.headers),
             (self.receipts.as_ref().map(|(blocks, _)| blocks), snapshots.receipts),
@@ -99,14 +93,10 @@ impl<DB: Database> Snapshotter<DB> {
         chain_spec: Arc<ChainSpec>,
         block_interval: u64,
     ) -> RethResult<Self> {
-        let (highest_snapshots_notifier, highest_snapshots_tracker) = watch::channel(None);
-
         let mut snapshotter = Self {
             provider_factory: ProviderFactory::new(db, chain_spec),
             snapshots_path: snapshots_path.as_ref().into(),
-            highest_snapshots: HighestSnapshots::default(),
-            highest_snapshots_notifier,
-            highest_snapshots_tracker,
+            highest_snapshots: Default::default(),
             block_interval,
         };
 
@@ -140,46 +130,49 @@ impl<DB: Database> Snapshotter<DB> {
 
     #[cfg(test)]
     fn set_highest_snapshots_from_targets(&mut self, targets: &SnapshotTargets) {
+        let mut highest_snapshots = self.highest_snapshots.write();
+
         if let Some(block_number) = &targets.headers {
-            self.highest_snapshots.headers = Some(*block_number.end());
+            highest_snapshots.headers = Some(*block_number.end());
         }
         if let Some((block_number, _)) = &targets.receipts {
-            self.highest_snapshots.receipts = Some(*block_number.end());
+            highest_snapshots.receipts = Some(*block_number.end());
         }
         if let Some((block_number, _)) = &targets.transactions {
-            self.highest_snapshots.transactions = Some(*block_number.end());
+            highest_snapshots.transactions = Some(*block_number.end());
         }
     }
 
     /// Looks into the snapshot directory to find the highest snapshotted block of each segment, and
     /// notifies every tracker.
     fn update_highest_snapshots_tracker(&mut self) -> RethResult<()> {
+        // Copying so we don't hold the write lock for more than necessary.
+        let mut highest_snapshot = *self.highest_snapshots.read();
+
         // It walks over the directory and parses the snapshot filenames extracting
         // `SnapshotSegment` and their inclusive range. It then takes the maximum block
         // number for each specific segment.
         for (segment, block_range, _) in iter_snapshots(&self.snapshots_path)? {
-            let max_segment_block = self.highest_snapshots.as_mut(segment);
+            let max_segment_block = highest_snapshot.as_mut(segment);
             if max_segment_block.map_or(true, |block| block < *block_range.end()) {
                 *max_segment_block = Some(*block_range.end());
             }
         }
 
-        let _ = self.highest_snapshots_notifier.send(Some(self.highest_snapshots)).map_err(|_| {
-            warn!(target: "snapshot", "Highest snapshots channel closed");
-        });
+        *self.highest_snapshots.write() = highest_snapshot;
 
         Ok(())
     }
 
     /// Returns a new [`HighestSnapshotsTracker`].
-    pub fn highest_snapshot_receiver(&self) -> HighestSnapshotsTracker {
-        self.highest_snapshots_tracker.clone()
+    pub fn highest_snapshot_tracker(&self) -> HighestSnapshotsTracker {
+        self.highest_snapshots.clone()
     }
 
     /// Run the snapshotter
     pub fn run(&mut self, targets: SnapshotTargets) -> SnapshotterResult {
         debug_assert!(targets.is_multiple_of_block_interval(self.block_interval));
-        debug_assert!(targets.is_contiguous_to_highest_snapshots(self.highest_snapshots));
+        debug_assert!(targets.is_contiguous_to_highest_snapshots(&self.highest_snapshots.read()));
 
         self.run_segment::<segments::Receipts>(
             targets.receipts.as_ref().map(|(range, _)| range.clone()),
@@ -236,25 +229,31 @@ impl<DB: Database> Snapshotter<DB> {
         );
 
         // Calculate block ranges to snapshot
-        let headers_block_range =
-            self.get_snapshot_target_block_range(to_block_number, self.highest_snapshots.headers);
-        let receipts_block_range =
-            self.get_snapshot_target_block_range(to_block_number, self.highest_snapshots.receipts);
-        let transactions_block_range = self
-            .get_snapshot_target_block_range(to_block_number, self.highest_snapshots.transactions);
+        let headers_block_range = self.get_snapshot_target_block_range(
+            to_block_number,
+            self.highest_snapshots.read().headers,
+        );
+        let receipts_block_range = self.get_snapshot_target_block_range(
+            to_block_number,
+            self.highest_snapshots.read().receipts,
+        );
+        let transactions_block_range = self.get_snapshot_target_block_range(
+            to_block_number,
+            self.highest_snapshots.read().transactions,
+        );
 
         // Calculate transaction ranges to snapshot
         let mut block_to_tx_number_cache = HashMap::default();
         let receipts_tx_range = self.get_snapshot_target_tx_range(
             &provider,
             &mut block_to_tx_number_cache,
-            self.highest_snapshots.receipts,
+            self.highest_snapshots.read().receipts,
             &receipts_block_range,
         )?;
         let transactions_tx_range = self.get_snapshot_target_tx_range(
             &provider,
             &mut block_to_tx_number_cache,
-            self.highest_snapshots.transactions,
+            self.highest_snapshots.read().transactions,
             &transactions_block_range,
         )?;
 
@@ -340,10 +339,7 @@ mod tests {
             Snapshotter::new(tx.inner_raw(), snapshots_dir.into_path(), MAINNET.clone(), 2)
                 .unwrap();
 
-        assert_eq!(
-            *snapshotter.highest_snapshot_receiver().borrow(),
-            Some(HighestSnapshots::default())
-        );
+        assert_eq!(*snapshotter.highest_snapshot_tracker().read(), HighestSnapshots::default());
     }
 
     #[test]
@@ -371,7 +367,7 @@ mod tests {
             }
         );
         assert!(targets.is_multiple_of_block_interval(snapshotter.block_interval));
-        assert!(targets.is_contiguous_to_highest_snapshots(snapshotter.highest_snapshots));
+        assert!(targets.is_contiguous_to_highest_snapshots(&snapshotter.highest_snapshots.read()));
         // Imitate snapshotter run according to the targets which updates the last snapshots state
         snapshotter.set_highest_snapshots_from_targets(&targets);
 
@@ -393,7 +389,7 @@ mod tests {
             }
         );
         assert!(targets.is_multiple_of_block_interval(snapshotter.block_interval));
-        assert!(targets.is_contiguous_to_highest_snapshots(snapshotter.highest_snapshots));
+        assert!(targets.is_contiguous_to_highest_snapshots(&snapshotter.highest_snapshots.read()));
         // Imitate snapshotter run according to the targets which updates the last snapshots state
         snapshotter.set_highest_snapshots_from_targets(&targets);
 

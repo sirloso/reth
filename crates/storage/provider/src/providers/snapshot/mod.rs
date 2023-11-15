@@ -4,10 +4,17 @@ pub use manager::SnapshotProvider;
 mod jar;
 pub use jar::SnapshotJarProvider;
 
+use parking_lot::RwLock;
 use reth_interfaces::RethResult;
 use reth_nippy_jar::NippyJar;
-use reth_primitives::{snapshot::SegmentHeader, SnapshotSegment};
-use std::ops::Deref;
+use reth_primitives::{
+    snapshot::{HighestSnapshots, SegmentHeader},
+    SnapshotSegment,
+};
+use std::{ops::Deref, sync::Arc};
+
+/// Tracker for the latest [`HighestSnapshots`] value.
+pub type HighestSnapshotsTracker = Arc<RwLock<HighestSnapshots>>;
 
 /// Alias type for each specific `NippyJar`.
 type LoadedJarRef<'a> = dashmap::mapref::one::Ref<'a, (u64, SnapshotSegment), LoadedJar>;
@@ -135,7 +142,7 @@ mod test {
         // Use providers to query Header data and compare if it matches
         {
             let db_provider = factory.provider().unwrap();
-            let manager = SnapshotProvider::new(snap_path.path());
+            let manager = SnapshotProvider::new(snap_path.path()).unwrap();
             let jar_provider = manager
                 .get_segment_provider_from_block(SnapshotSegment::Headers, 0, Some(&snap_file))
                 .unwrap();

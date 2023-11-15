@@ -538,7 +538,7 @@ where
             vec![],
             5,
             self.base_config.chain_spec.prune_delete_limit,
-            watch::channel(None).1,
+            Default::default(),
         );
 
         let mut hooks = EngineHooks::new();
