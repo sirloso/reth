@@ -30,6 +30,10 @@ impl Database for DatabaseMock {
     fn tx_mut(&self) -> Result<Self::TXMut, DatabaseError> {
         Ok(TxMock::default())
     }
+
+    fn tx_mut_nosync(&self) -> Result<Self::TXMut, DatabaseError> {
+        Ok(TxMock::default())
+    }
 }
 
 /// Mock read only tx

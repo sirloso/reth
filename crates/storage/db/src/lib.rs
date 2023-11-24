@@ -203,6 +203,10 @@ pub mod test_utils {
         fn tx_mut(&self) -> Result<Self::TXMut, DatabaseError> {
             self.db().tx_mut()
         }
+
+        fn tx_mut_nosync(&self) -> Result<Self::TXMut, DatabaseError> {
+            self.db().tx_mut_nosync()
+        }
     }
 
     /// Create read/write database for testing
