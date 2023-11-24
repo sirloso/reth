@@ -1104,7 +1104,7 @@ impl<DB: Database, EF: ExecutorFactory> BlockchainTree<DB, EF> {
 
     /// Write the given chain to the database as canonical.
     fn commit_canonical_to_database(&self, chain: Chain) -> RethResult<()> {
-        let provider_rw = self.externals.provider_factory.provider_rw()?;
+        let provider_rw = self.externals.provider_factory.provider_rw_nosync()?;
 
         let (blocks, state) = chain.into_inner();
 

@@ -73,6 +73,17 @@ impl<DB: Database> ProviderFactory<DB> {
 
         Ok(DatabaseProviderRW(provider))
     }
+
+    pub fn provider_rw_nosync(&self) -> ProviderResult<DatabaseProviderRW<DB>> {
+        let mut provider =
+            DatabaseProvider::new_rw(self.db.tx_mut_nosync()?, self.chain_spec.clone());
+
+        if let Some(snapshot_provider) = &self.snapshot_provider {
+            provider = provider.with_snapshot_provider(snapshot_provider.clone());
+        }
+
+        Ok(DatabaseProviderRW(provider))
+    }
 }
 
 impl<DB> ProviderFactory<DB> {

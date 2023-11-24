@@ -57,6 +57,13 @@ impl Database for DatabaseEnv {
             self.with_metrics,
         ))
     }
+
+    fn tx_mut_nosync(&self) -> Result<Self::TXMut, DatabaseError> {
+        Ok(Tx::new_with_metrics(
+            self.inner.begin_rw_txn_nosync().map_err(|e| DatabaseError::InitTx(e.into()))?,
+            self.with_metrics,
+        ))
+    }
 }
 
 impl DatabaseEnv {

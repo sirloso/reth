@@ -6,6 +6,7 @@ use crate::{
     Mode, Transaction, TransactionKind,
 };
 use byteorder::{ByteOrder, NativeEndian};
+use ffi::MDBX_TXN_NOSYNC;
 use mem::size_of;
 use std::{
     ffi::CString,
@@ -107,6 +108,28 @@ impl Environment {
                 .send(TxnManagerMessage::Begin {
                     parent: TxnPtr(ptr::null_mut()),
                     flags: RW::OPEN_FLAGS,
+                    sender: tx,
+                })
+                .unwrap();
+            let res = rx.recv().unwrap();
+            if let Err(Error::Busy) = &res {
+                sleep(Duration::from_millis(250));
+                continue
+            }
+
+            break res
+        }?;
+        Ok(Transaction::new_from_ptr(self.clone(), txn.0))
+    }
+
+    pub fn begin_rw_txn_nosync(&self) -> Result<Transaction<RW>> {
+        let sender = self.ensure_txn_manager()?;
+        let txn = loop {
+            let (tx, rx) = sync_channel(0);
+            sender
+                .send(TxnManagerMessage::Begin {
+                    parent: TxnPtr(ptr::null_mut()),
+                    flags: RW::OPEN_FLAGS | MDBX_TXN_NOSYNC,
                     sender: tx,
                 })
                 .unwrap();
