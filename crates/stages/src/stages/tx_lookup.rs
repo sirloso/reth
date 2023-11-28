@@ -116,7 +116,7 @@ impl<DB: Database> Stage<DB> for TransactionLookupStage {
         for (tx_hash, id) in tx_list {
             let key = (U256::from_be_slice(&tx_hash.0) % U256::from(u32::MAX)).try_into().unwrap();
             let lookup = TxNumberLookup { hash: tx_hash, number: id };
-            txhash_cursor.insert(key, lookup)?;
+            txhash_cursor.upsert(key, lookup)?;
             // if insert {
             // } else {
             //     txhash_cursor.append(key, lookup)?;
