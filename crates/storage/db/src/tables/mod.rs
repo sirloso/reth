@@ -17,12 +17,12 @@ pub mod models;
 mod raw;
 pub(crate) mod utils;
 
-use crate::abstraction::table::Table;
 pub use raw::{RawDupSort, RawKey, RawTable, RawValue, TableRawRow};
 use std::{fmt::Display, str::FromStr};
 
 /// Declaration of all Database tables.
 use crate::{
+    abstraction::table::Table,
     table::DupSort,
     tables::{
         codecs::CompactU256,
@@ -30,6 +30,7 @@ use crate::{
             accounts::{AccountBeforeTx, BlockNumberAddress},
             blocks::{HeaderHash, StoredBlockOmmers},
             storage_sharded_key::StorageShardedKey,
+            tx_lookup::TxNumberLookup,
             ShardedKey, StoredBlockBodyIndices, StoredBlockWithdrawals,
         },
     },
@@ -273,9 +274,9 @@ table!(
     ( Transactions ) TxNumber | TransactionSignedNoHash
 );
 
-table!(
+dupsort!(
     /// Stores the mapping of the transaction hash to the transaction number.
-    ( TxHashNumber ) TxHash | TxNumber
+    ( TxHashNumber ) u32 | [TxHash] TxNumberLookup
 );
 
 table!(

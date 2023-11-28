@@ -16,8 +16,9 @@ use reth_db::{
     cursor::{DbCursorRO, DbCursorRW, DbDupCursorRO},
     database::Database,
     models::{
-        sharded_key, storage_sharded_key::StorageShardedKey, AccountBeforeTx, BlockNumberAddress,
-        ShardedKey, StoredBlockBodyIndices, StoredBlockOmmers, StoredBlockWithdrawals,
+        sharded_key, storage_sharded_key::StorageShardedKey, tx_lookup::TxNumberLookup,
+        AccountBeforeTx, BlockNumberAddress, ShardedKey, StoredBlockBodyIndices, StoredBlockOmmers,
+        StoredBlockWithdrawals,
     },
     table::{Table, TableRow},
     tables,
@@ -497,9 +498,14 @@ impl<TX: DbTxMut + DbTx> DatabaseProvider<TX> {
 
         if TAKE {
             // Remove TxHashNumber
-            let mut tx_hash_cursor = self.tx.cursor_write::<tables::TxHashNumber>()?;
+            let mut tx_hash_cursor = self.tx.cursor_dup_write::<tables::TxHashNumber>()?;
             for (_, tx) in transactions.iter() {
-                if tx_hash_cursor.seek_exact(tx.hash())?.is_some() {
+                let key = U256::from_be_slice(&tx.hash.0) % U256::from(u32::MAX);
+                if tx_hash_cursor
+                    .seek_by_key_subkey(key.try_into().unwrap(), tx.hash)?
+                    .filter(|entry| entry.hash == tx.hash)
+                    .is_some()
+                {
                     tx_hash_cursor.delete_current()?;
                 }
             }
@@ -1276,7 +1282,13 @@ impl<TX: DbTx> TransactionsProviderExt for DatabaseProvider<TX> {
 
 impl<TX: DbTx> TransactionsProvider for DatabaseProvider<TX> {
     fn transaction_id(&self, tx_hash: TxHash) -> ProviderResult<Option<TxNumber>> {
-        Ok(self.tx.get::<tables::TxHashNumber>(tx_hash)?)
+        let key = U256::from_be_slice(&tx_hash.0) % U256::from(u32::MAX);
+        Ok(self
+            .tx
+            .cursor_dup_read::<tables::TxHashNumber>()?
+            .seek_by_key_subkey(key.try_into().unwrap(), tx_hash)?
+            .filter(|entry| entry.hash == tx_hash)
+            .map(|entry| entry.number))
     }
 
     fn transaction_by_id(&self, id: TxNumber) -> ProviderResult<Option<TransactionSigned>> {
@@ -2255,7 +2267,12 @@ impl<TX: DbTxMut + DbTx> BlockWriter for DatabaseProvider<TX> {
                 .is_none()
             {
                 let start = Instant::now();
-                self.tx.put::<tables::TxHashNumber>(hash, next_tx_num)?;
+
+                let key = U256::from_be_slice(&hash.0) % U256::from(u32::MAX);
+                self.tx.put::<tables::TxHashNumber>(
+                    key.try_into().unwrap(),
+                    TxNumberLookup { hash, number: next_tx_num },
+                )?;
                 tx_hash_numbers_elapsed += start.elapsed();
             }
             next_tx_num += 1;

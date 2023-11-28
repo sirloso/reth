@@ -1,9 +1,9 @@
 use crate::{
-    segments::{PruneInput, PruneOutput, PruneOutputCheckpoint, Segment},
+    segments::{PruneInput, PruneOutput, Segment},
     PrunerError,
 };
 use rayon::prelude::*;
-use reth_db::{database::Database, tables};
+use reth_db::database::Database;
 use reth_primitives::{PruneMode, PruneSegment};
 use reth_provider::{DatabaseProviderRW, TransactionsProvider};
 use tracing::{instrument, trace};
@@ -43,7 +43,7 @@ impl<DB: Database> Segment<DB> for TransactionLookup {
         }
         .into_inner();
         let tx_range = start..=(end.min(start + input.delete_limit as u64 - 1));
-        let tx_range_end = *tx_range.end();
+        // let tx_range_end = *tx_range.end();
 
         // Retrieve transactions in the range and calculate their hashes in parallel
         let hashes = provider
@@ -60,35 +60,36 @@ impl<DB: Database> Segment<DB> for TransactionLookup {
             ))
         }
 
-        let mut last_pruned_transaction = None;
-        let (pruned, _) = provider.prune_table_with_iterator::<tables::TxHashNumber>(
-            hashes,
-            input.delete_limit,
-            |row| {
-                last_pruned_transaction = Some(last_pruned_transaction.unwrap_or(row.1).max(row.1))
-            },
-        )?;
-        let done = tx_range_end == end;
-        trace!(target: "pruner", %pruned, %done, "Pruned transaction lookup");
+        // let mut last_pruned_transaction = None;
+        // let (pruned, _) = provider.prune_table_with_iterator::<tables::TxHashNumber>(
+        //     hashes,
+        //     input.delete_limit,
+        //     |row| {
+        //         last_pruned_transaction =
+        // Some(last_pruned_transaction.unwrap_or(row.1).max(row.1))     },
+        // )?;
+        // let done = tx_range_end == end;
+        // trace!(target: "pruner", %pruned, %done, "Pruned transaction lookup");
 
-        let last_pruned_transaction = last_pruned_transaction.unwrap_or(tx_range_end);
+        // let last_pruned_transaction = last_pruned_transaction.unwrap_or(tx_range_end);
 
-        let last_pruned_block = provider
-            .transaction_block(last_pruned_transaction)?
-            .ok_or(PrunerError::InconsistentData("Block for transaction is not found"))?
-            // If there's more transaction lookup entries to prune, set the checkpoint block number
-            // to previous, so we could finish pruning its transaction lookup entries on the next
-            // run.
-            .checked_sub(if done { 0 } else { 1 });
+        // let last_pruned_block = provider
+        //     .transaction_block(last_pruned_transaction)?
+        //     .ok_or(PrunerError::InconsistentData("Block for transaction is not found"))?
+        //     // If there's more transaction lookup entries to prune, set the checkpoint block
+        // number     // to previous, so we could finish pruning its transaction lookup
+        // entries on the next     // run.
+        //     .checked_sub(if done { 0 } else { 1 });
 
-        Ok(PruneOutput {
-            done,
-            pruned,
-            checkpoint: Some(PruneOutputCheckpoint {
-                block_number: last_pruned_block,
-                tx_number: Some(last_pruned_transaction),
-            }),
-        })
+        // Ok(PruneOutput {
+        //     done,
+        //     pruned,
+        //     checkpoint: Some(PruneOutputCheckpoint {
+        //         block_number: last_pruned_block,
+        //         tx_number: Some(last_pruned_transaction),
+        //     }),
+        // })
+        panic!("can't prune tx lookup")
     }
 }
 

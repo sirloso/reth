@@ -14,6 +14,7 @@ pub mod blocks;
 pub mod integer_list;
 pub mod sharded_key;
 pub mod storage_sharded_key;
+pub mod tx_lookup;
 
 pub use accounts::*;
 pub use blocks::*;

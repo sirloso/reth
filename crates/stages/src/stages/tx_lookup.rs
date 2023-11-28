@@ -1,15 +1,16 @@
 use crate::{ExecInput, ExecOutput, Stage, StageError, UnwindInput, UnwindOutput};
 use rayon::prelude::*;
 use reth_db::{
-    cursor::{DbCursorRO, DbCursorRW},
+    cursor::{DbCursorRO, DbCursorRW, DbDupCursorRO},
     database::Database,
+    models::tx_lookup::TxNumberLookup,
     tables,
     transaction::{DbTx, DbTxMut},
 };
 use reth_interfaces::provider::ProviderError;
 use reth_primitives::{
     stage::{EntitiesCheckpoint, StageCheckpoint, StageId},
-    PruneCheckpoint, PruneMode, PruneSegment,
+    PruneCheckpoint, PruneMode, PruneSegment, U256,
 };
 use reth_provider::{
     BlockReader, DatabaseProviderRW, PruneCheckpointReader, PruneCheckpointWriter,
@@ -104,19 +105,22 @@ impl<DB: Database> Stage<DB> for TransactionLookupStage {
         // in our set, then we need to insert inside the DB. If it is smaller then last
         // element in the DB, we can append to the DB.
         // Append probably only ever happens during sync, on the first table insertion.
-        let insert = tx_list
-            .first()
-            .zip(txhash_cursor.last()?)
-            .map(|((first, _), (last, _))| first <= &last)
-            .unwrap_or_default();
+        // TODO:
+        // let insert = tx_list
+        //     .first()
+        //     .zip(txhash_cursor.last()?)
+        //     .map(|((first, _), (last, _))| first <= &last)
+        //     .unwrap_or_default();
         // if txhash_cursor.last() is None we will do insert. `zip` would return none if any item is
         // none. if it is some and if first is smaller than last, we will do append.
         for (tx_hash, id) in tx_list {
-            if insert {
-                txhash_cursor.insert(tx_hash, id)?;
-            } else {
-                txhash_cursor.append(tx_hash, id)?;
-            }
+            let key = (U256::from_be_slice(&tx_hash.0) % U256::from(u32::MAX)).try_into().unwrap();
+            let lookup = TxNumberLookup { hash: tx_hash, number: id };
+            txhash_cursor.insert(key, lookup)?;
+            // if insert {
+            // } else {
+            //     txhash_cursor.append(key, lookup)?;
+            // }
         }
 
         Ok(ExecOutput {
@@ -137,7 +141,7 @@ impl<DB: Database> Stage<DB> for TransactionLookupStage {
 
         // Cursors to unwind tx hash to number
         let mut body_cursor = tx.cursor_read::<tables::BlockBodyIndices>()?;
-        let mut tx_hash_number_cursor = tx.cursor_write::<tables::TxHashNumber>()?;
+        let mut tx_hash_number_cursor = tx.cursor_dup_write::<tables::TxHashNumber>()?;
         let mut transaction_cursor = tx.cursor_read::<tables::Transactions>()?;
         let mut rev_walker = body_cursor.walk_back(Some(*range.end()))?;
         while let Some((number, body)) = rev_walker.next().transpose()? {
@@ -149,7 +153,14 @@ impl<DB: Database> Stage<DB> for TransactionLookupStage {
             for tx_id in body.tx_num_range() {
                 // First delete the transaction and hash to id mapping
                 if let Some((_, transaction)) = transaction_cursor.seek_exact(tx_id)? {
-                    if tx_hash_number_cursor.seek_exact(transaction.hash())?.is_some() {
+                    let hash = transaction.hash();
+                    let key =
+                        (U256::from_be_slice(&hash.0) % U256::from(u32::MAX)).try_into().unwrap();
+                    if tx_hash_number_cursor
+                        .seek_by_key_subkey(key, hash)?
+                        .filter(|entry| entry.hash == hash)
+                        .is_some()
+                    {
                         tx_hash_number_cursor.delete_current()?;
                     }
                 }
@@ -449,7 +460,7 @@ mod tests {
             match body_result {
                 Ok(body) => self.db.ensure_no_entry_above_by_value::<tables::TxHashNumber, _>(
                     body.last_tx_num(),
-                    |key| key,
+                    |value| value.number,
                 )?,
                 Err(_) => {
                     assert!(self.db.table_is_empty::<tables::TxHashNumber>()?);

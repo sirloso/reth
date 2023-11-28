@@ -1,4 +1,5 @@
 use crate::{
+    models::tx_lookup::TxNumberLookup,
     table::{Compress, Decompress},
     tables::models::*,
 };
@@ -47,6 +48,7 @@ impl_compression_for_compact!(
     Bytecode,
     AccountBeforeTx,
     TransactionSignedNoHash,
+    TxNumberLookup,
     CompactU256,
     StageCheckpoint,
     PruneCheckpoint

@@ -2,7 +2,7 @@ use reth_db::{
     common::KeyValue,
     cursor::{DbCursorRO, DbCursorRW, DbDupCursorRO},
     database::Database,
-    models::{AccountBeforeTx, StoredBlockBodyIndices},
+    models::{tx_lookup::TxNumberLookup, AccountBeforeTx, StoredBlockBodyIndices},
     table::{Table, TableRow},
     tables,
     test_utils::{create_test_rw_db, create_test_rw_db_with_path, TempDatabase},
@@ -196,7 +196,12 @@ impl TestStageDB {
         self.commit(|tx| {
             tx_hash_numbers.into_iter().try_for_each(|(tx_hash, tx_num)| {
                 // Insert into tx hash numbers table.
-                Ok(tx.put::<tables::TxHashNumber>(tx_hash, tx_num)?)
+                let key =
+                    (U256::from_be_slice(&tx_hash.0) % U256::from(u32::MAX)).try_into().unwrap();
+                Ok(tx.put::<tables::TxHashNumber>(
+                    key,
+                    TxNumberLookup { hash: tx_hash, number: tx_num },
+                )?)
             })
         })
     }

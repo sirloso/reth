@@ -232,7 +232,7 @@ mod tests {
     use rand::Rng;
     use reth_db::{
         cursor::{DbCursorRO, DbCursorRW},
-        models::{BlockNumberAddress, StoredBlockBodyIndices},
+        models::{tx_lookup::TxNumberLookup, BlockNumberAddress, StoredBlockBodyIndices},
     };
     use reth_interfaces::test_utils::{
         generators,
@@ -504,7 +504,14 @@ mod tests {
                 self.db.commit(|tx| {
                     progress.body.iter().try_for_each(
                         |transaction| -> Result<(), reth_db::DatabaseError> {
-                            tx.put::<tables::TxHashNumber>(transaction.hash(), next_tx_num)?;
+                            let hash = transaction.hash;
+                            let key = (U256::from_be_slice(&hash.0) % U256::from(u32::MAX))
+                                .try_into()
+                                .unwrap();
+                            tx.put::<tables::TxHashNumber>(
+                                key,
+                                TxNumberLookup { hash, number: next_tx_num },
+                            )?;
                             tx.put::<tables::Transactions>(
                                 next_tx_num,
                                 transaction.clone().into(),
