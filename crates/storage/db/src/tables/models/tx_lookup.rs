@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 #[derive_arbitrary(compact)]
 #[derive(Debug, Default, Clone, Eq, PartialEq, Serialize, Deserialize, PartialOrd, Ord)]
 pub struct TxNumberLookup {
-    /// Address for the account. Acts as `DupSort::SubKey`.
+    /// Transaction hash. Acts as `DupSort::SubKey`.
     pub hash: TxHash,
     /// Account state before the transaction.
     pub number: TxNumber,

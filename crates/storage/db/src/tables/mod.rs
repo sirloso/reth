@@ -169,7 +169,7 @@ tables!([
     (BlockWithdrawals, TableType::Table),
     (TransactionBlock, TableType::Table),
     (Transactions, TableType::Table),
-    (TxHashNumber, TableType::Table),
+    (TxHashNumber, TableType::DupSort),
     (Receipts, TableType::Table),
     (PlainAccountState, TableType::Table),
     (PlainStorageState, TableType::DupSort),
