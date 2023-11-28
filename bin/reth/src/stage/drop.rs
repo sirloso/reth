@@ -159,7 +159,9 @@ impl Command {
                         StageId::TransactionLookup.to_string(),
                         Default::default(),
                     )?;
-                    insert_genesis_header::<DatabaseEnv>(tx, self.chain)?;
+                    let t = tx.inner.open_db(Some("TxHashNumber"))?;
+                    unsafe { tx.inner.drop_db(t)? }
+                    // insert_genesis_header::<DatabaseEnv>(tx, self.chain)?;
                 }
                 _ => {
                     info!("Nothing to do for stage {:?}", self.stage);
