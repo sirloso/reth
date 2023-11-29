@@ -500,7 +500,7 @@ impl<TX: DbTxMut + DbTx> DatabaseProvider<TX> {
             // Remove TxHashNumber
             let mut tx_hash_cursor = self.tx.cursor_dup_write::<tables::TxHashNumber>()?;
             for (_, tx) in transactions.iter() {
-                let key = U256::from_be_slice(&tx.hash.0) % U256::from(u8::MAX);
+                let key = U256::from_be_slice(&tx.hash.0) % U256::from(u16::MAX);
                 if tx_hash_cursor
                     .seek_by_key_subkey(key.try_into().unwrap(), tx.hash)?
                     .filter(|entry| entry.hash == tx.hash)
@@ -1282,7 +1282,7 @@ impl<TX: DbTx> TransactionsProviderExt for DatabaseProvider<TX> {
 
 impl<TX: DbTx> TransactionsProvider for DatabaseProvider<TX> {
     fn transaction_id(&self, tx_hash: TxHash) -> ProviderResult<Option<TxNumber>> {
-        let key = U256::from_be_slice(&tx_hash.0) % U256::from(u8::MAX);
+        let key = U256::from_be_slice(&tx_hash.0) % U256::from(u16::MAX);
         Ok(self
             .tx
             .cursor_dup_read::<tables::TxHashNumber>()?
@@ -2268,7 +2268,7 @@ impl<TX: DbTxMut + DbTx> BlockWriter for DatabaseProvider<TX> {
             {
                 let start = Instant::now();
 
-                let key = U256::from_be_slice(&hash.0) % U256::from(u8::MAX);
+                let key = U256::from_be_slice(&hash.0) % U256::from(u16::MAX);
                 self.tx.put::<tables::TxHashNumber>(
                     key.try_into().unwrap(),
                     TxNumberLookup { hash, number: next_tx_num },

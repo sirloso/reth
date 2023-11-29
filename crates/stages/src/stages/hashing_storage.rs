@@ -505,7 +505,7 @@ mod tests {
                     progress.body.iter().try_for_each(
                         |transaction| -> Result<(), reth_db::DatabaseError> {
                             let hash = transaction.hash;
-                            let key = (U256::from_be_slice(&hash.0) % U256::from(u8::MAX))
+                            let key = (U256::from_be_slice(&hash.0) % U256::from(u16::MAX))
                                 .try_into()
                                 .unwrap();
                             tx.put::<tables::TxHashNumber>(

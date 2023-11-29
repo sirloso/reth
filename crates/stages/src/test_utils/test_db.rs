@@ -197,7 +197,7 @@ impl TestStageDB {
             tx_hash_numbers.into_iter().try_for_each(|(tx_hash, tx_num)| {
                 // Insert into tx hash numbers table.
                 let key =
-                    (U256::from_be_slice(&tx_hash.0) % U256::from(u8::MAX)).try_into().unwrap();
+                    (U256::from_be_slice(&tx_hash.0) % U256::from(u16::MAX)).try_into().unwrap();
                 Ok(tx.put::<tables::TxHashNumber>(
                     key,
                     TxNumberLookup { hash: tx_hash, number: tx_num },

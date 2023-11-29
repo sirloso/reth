@@ -114,7 +114,7 @@ impl<DB: Database> Stage<DB> for TransactionLookupStage {
         // if txhash_cursor.last() is None we will do insert. `zip` would return none if any item is
         // none. if it is some and if first is smaller than last, we will do append.
         for (tx_hash, id) in tx_list {
-            let key = (U256::from_be_slice(&tx_hash.0) % U256::from(u8::MAX)).try_into().unwrap();
+            let key = (U256::from_be_slice(&tx_hash.0) % U256::from(u16::MAX)).try_into().unwrap();
             let lookup = TxNumberLookup { hash: tx_hash, number: id };
             txhash_cursor.upsert(key, lookup)?;
             // if insert {
@@ -155,7 +155,7 @@ impl<DB: Database> Stage<DB> for TransactionLookupStage {
                 if let Some((_, transaction)) = transaction_cursor.seek_exact(tx_id)? {
                     let hash = transaction.hash();
                     let key =
-                        (U256::from_be_slice(&hash.0) % U256::from(u8::MAX)).try_into().unwrap();
+                        (U256::from_be_slice(&hash.0) % U256::from(u16::MAX)).try_into().unwrap();
                     if tx_hash_number_cursor
                         .seek_by_key_subkey(key, hash)?
                         .filter(|entry| entry.hash == hash)
