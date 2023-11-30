@@ -671,6 +671,7 @@ impl EnvironmentBuilder {
     }
 
     pub fn set_gc_time_limit(&mut self, v: Duration) -> &mut Self {
+        // Garbage Collection time limit set as a `1/65536` fraction of a second
         self.gc_time_limit = Some((v.as_secs_f64() * 65536.0) as u64);
         self
     }
