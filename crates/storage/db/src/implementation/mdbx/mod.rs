@@ -155,7 +155,7 @@ impl DatabaseEnv {
         }
 
         let env = DatabaseEnv {
-            inner: inner_env.open(path).map_err(|e| DatabaseError::Open(e.into()))?,
+            inner: inner_env.open(path).map_err(|e| DatabaseError::OpenEnvironment(e.into()))?,
             with_metrics: false,
         };
 

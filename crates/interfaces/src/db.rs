@@ -3,9 +3,12 @@ use thiserror::Error;
 /// Database error type.
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
 pub enum DatabaseError {
+    /// Failed to open the environment.
+    #[error("failed to open the environment ({0})")]
+    OpenEnvironment(i32),
     /// Failed to open the database.
     #[error("failed to open the database ({0})")]
-    Open(i32),
+    OpenDatabase(i32),
     /// Failed to create a table in the database.
     #[error("failed to create a table ({0})")]
     CreateTable(i32),

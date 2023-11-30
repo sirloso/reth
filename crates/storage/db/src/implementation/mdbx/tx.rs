@@ -74,7 +74,7 @@ impl<K: TransactionKind> Tx<K> {
             *dbi_handle = Some(
                 self.inner
                     .open_db(Some(T::NAME))
-                    .map_err(|e| DatabaseError::InitCursor(e.into()))?
+                    .map_err(|e| DatabaseError::OpenDatabase(e.into()))?
                     .dbi(),
             );
         }
