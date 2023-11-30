@@ -10,7 +10,7 @@ use reth_interfaces::db::LogLevel;
 use reth_libmdbx::{
     DatabaseFlags, Environment, EnvironmentFlags, Geometry, Mode, PageSize, SyncMode, RO, RW,
 };
-use std::{ops::Deref, path::Path};
+use std::{ops::Deref, path::Path, time::Duration};
 use tx::Tx;
 
 pub mod cursor;
@@ -124,7 +124,9 @@ impl DatabaseEnv {
         // Previously, MDBX set this value as `256 * 1024` constant. Let's fallback to this,
         // because we want to prioritize freelist lookup speed over database growth.
         // https://github.com/paradigmxyz/reth/blob/fa2b9b685ed9787636d962f4366caf34a9186e66/crates/storage/libmdbx-rs/mdbx-sys/libmdbx/mdbx.c#L16017.
-        inner_env.set_rp_augment_limit(256 * 1024);
+        // inner_env.set_rp_augment_limit(256 * 1024);
+
+        inner_env.set_gc_time_limit(Duration::from_millis(50));
 
         if let Some(log_level) = log_level {
             // Levels higher than [LogLevel::Notice] require libmdbx built with `MDBX_DEBUG` option.

@@ -40,6 +40,7 @@ impl Environment {
             max_readers: None,
             max_dbs: None,
             rp_augment_limit: None,
+            gc_time_limit: None,
             loose_limit: None,
             dp_reserve_limit: None,
             txn_dp_limit: None,
@@ -450,6 +451,7 @@ pub struct EnvironmentBuilder {
     max_readers: Option<u64>,
     max_dbs: Option<u64>,
     rp_augment_limit: Option<u64>,
+    gc_time_limit: Option<u64>,
     loose_limit: Option<u64>,
     dp_reserve_limit: Option<u64>,
     txn_dp_limit: Option<u64>,
@@ -518,6 +520,7 @@ impl EnvironmentBuilder {
                 for (opt, v) in [
                     (ffi::MDBX_opt_max_db, self.max_dbs),
                     (ffi::MDBX_opt_rp_augment_limit, self.rp_augment_limit),
+                    (ffi::MDBX_opt_gc_time_limit, self.gc_time_limit),
                     (ffi::MDBX_opt_loose_limit, self.loose_limit),
                     (ffi::MDBX_opt_dp_reserve_limit, self.dp_reserve_limit),
                     (ffi::MDBX_opt_txn_dp_limit, self.txn_dp_limit),
@@ -664,6 +667,11 @@ impl EnvironmentBuilder {
 
     pub fn set_rp_augment_limit(&mut self, v: u64) -> &mut Self {
         self.rp_augment_limit = Some(v);
+        self
+    }
+
+    pub fn set_gc_time_limit(&mut self, v: Duration) -> &mut Self {
+        self.gc_time_limit = Some((v.as_secs_f64() * 65536.0) as u64);
         self
     }
 
