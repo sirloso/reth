@@ -79,7 +79,8 @@ impl DatabaseEnv {
             }
         };
 
-        inner_env.set_max_dbs(Tables::ALL.len());
+        // account for 2 internal MDBX databases (main + free)
+        inner_env.set_max_dbs(Tables::ALL.len() + 2);
         inner_env.set_geometry(Geometry {
             // Maximum database size of 4 terabytes
             size: Some(0..(4 * TERABYTE)),
