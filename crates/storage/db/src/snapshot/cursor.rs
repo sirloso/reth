@@ -3,7 +3,7 @@ use crate::table::Decompress;
 use derive_more::{Deref, DerefMut};
 use reth_interfaces::provider::ProviderResult;
 use reth_nippy_jar::{DataReader, NippyJar, NippyJarCursor};
-use reth_primitives::{snapshot::SegmentHeader, B256};
+use reth_primitives::{snapshot::SegmentHeader, SnapshotSegment, B256};
 use std::sync::Arc;
 
 /// Cursor of a snapshot segment.
@@ -23,7 +23,7 @@ impl<'a> SnapshotCursor<'a> {
     }
 
     /// Gets a row of values.
-    pub fn get(
+    fn get(
         &mut self,
         key_or_num: KeyOrNumber<'_>,
         mask: usize,
@@ -35,7 +35,15 @@ impl<'a> SnapshotCursor<'a> {
                 if offset > n {
                     return Ok(None)
                 }
-                self.row_by_number_with_cols((n - offset) as usize, mask)
+
+                let mut row_index = (n - offset) as usize;
+
+                if matches!(self.jar().user_header().segment(), SnapshotSegment::Headers) {
+                    // Headers inserts rows in reverse, so start is at the end of the file.
+                    row_index = self.jar().rows() - 1 - row_index;
+                }
+
+                self.row_by_number_with_cols(row_index, mask)
             }
         }?;
 

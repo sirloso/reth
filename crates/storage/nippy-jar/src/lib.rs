@@ -196,6 +196,11 @@ where
         &self.user_header
     }
 
+    /// Gets number of existing rows
+    pub fn rows(&self) -> usize {
+        self.rows
+    }
+
     /// Gets a reference to `self.offsets`.
     pub fn filter_size(&self) -> usize {
         self.size()

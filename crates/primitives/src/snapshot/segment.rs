@@ -175,6 +175,11 @@ impl SegmentHeader {
             SnapshotSegment::Transactions | SnapshotSegment::Receipts => self.tx_start(),
         }
     }
+
+    /// Returns this headers segment
+    pub fn segment(&self) -> SnapshotSegment {
+        self.segment
+    }
 }
 
 /// Configuration used on the segment.
