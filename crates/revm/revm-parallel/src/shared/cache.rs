@@ -1,4 +1,4 @@
-use super::SharedCacheAccount;
+use super::{state::time, SharedCacheAccount};
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use reth_primitives::{BlockNumber, TransitionId};
@@ -7,7 +7,7 @@ use revm::{
     primitives::{Account, AccountInfo, Address, Bytecode, HashMap, B256},
     TransitionState,
 };
-use std::collections::HashSet;
+use std::{collections::HashSet, time::Instant};
 
 /// Cache state contains both modified and original values.
 ///
@@ -51,7 +51,8 @@ impl SharedCacheState {
 
     /// Insert not existing account.
     pub fn insert_not_existing(&self, address: Address) {
-        self.accounts.write().insert(address, SharedCacheAccount::new_loaded_not_existing());
+        time("insert_not_existing", || self.accounts.write())
+            .insert(address, SharedCacheAccount::new_loaded_not_existing());
     }
 
     /// Insert Loaded (Or LoadedEmptyEip161 if account is empty) account.
@@ -61,7 +62,7 @@ impl SharedCacheState {
         } else {
             SharedCacheAccount::new_loaded_empty_eip161(HashMap::default())
         };
-        self.accounts.write().insert(address, account);
+        time("insert_account", || self.accounts.write()).insert(address, account);
     }
 
     /// Similar to `insert_account` but with storage.
@@ -76,7 +77,7 @@ impl SharedCacheState {
         } else {
             SharedCacheAccount::new_loaded_empty_eip161(storage)
         };
-        self.accounts.write().insert(address, account);
+        time("insert_account_with_storage", || self.accounts.write()).insert(address, account);
     }
 
     /// Apply outputs of EVM execution.
@@ -84,7 +85,7 @@ impl SharedCacheState {
         &mut self,
         account_states: HashMap<Address, Vec<(TransitionId, Account)>>,
     ) {
-        let mut accounts = self.accounts.write();
+        let mut accounts = time("apply_evm_states", || self.accounts.write());
         for (address, account_states) in account_states {
             let this_account = accounts.get_mut(&address).expect("account must be present");
             let previous_info = this_account.latest_account_info();
@@ -100,7 +101,7 @@ impl SharedCacheState {
 
     /// Take account transitions from shared cache state.
     pub fn take_transitions(&mut self, block_number: BlockNumber) -> TransitionState {
-        let mut accounts = self.accounts.write();
+        let mut accounts = time("take_transitions", || self.accounts.write());
         let mut transitions = HashMap::default();
         for address in self.touched.remove(&block_number).unwrap_or_default() {
             let account = accounts.get_mut(&address).unwrap();

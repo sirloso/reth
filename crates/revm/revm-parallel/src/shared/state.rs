@@ -15,6 +15,7 @@ use revm::{
 };
 use std::{
     sync::atomic::{AtomicU64, Ordering},
+    time::Instant,
     vec::Vec,
 };
 
@@ -68,7 +69,7 @@ impl<DB: DatabaseRef> SharedState<DB> {
         block_number: BlockNumber,
         balances: impl IntoIterator<Item = (Address, u128)>,
     ) -> Result<(), DB::Error> {
-        let mut accounts = self.cache.accounts.write();
+        let mut accounts = time("increment_balance", || self.cache.accounts.write());
         for (address, balance) in balances.into_iter().filter(|(_, incr)| *incr != 0) {
             match accounts.entry(address) {
                 hash_map::Entry::Occupied(mut entry) => {
@@ -92,7 +93,7 @@ impl<DB: DatabaseRef> SharedState<DB> {
         addresses: impl IntoIterator<Item = Address>,
     ) -> Result<Vec<u128>, DB::Error> {
         let mut balances = Vec::new();
-        let mut accounts = self.cache.accounts.write();
+        let mut accounts = time("drain_balances", || self.cache.accounts.write());
         for address in addresses {
             let balance = match accounts.entry(address) {
                 hash_map::Entry::Occupied(mut entry) => entry.get_mut().drain_balance(block_number),
@@ -174,13 +175,13 @@ impl<DB: DatabaseRef> DatabaseRef for SharedState<DB> {
     type Error = DB::Error;
 
     fn basic_ref(&self, address: Address) -> Result<Option<AccountInfo>, Self::Error> {
-        let accounts = self.cache.accounts.read();
+        let accounts = time("basic_ref", || self.cache.accounts.read());
         let account = if let Some(account) = accounts.get(&address) {
             account.latest_account_info()
         } else {
             drop(accounts);
             let account = self.load_account_from_database(address)?;
-            self.cache.accounts.write().insert(address, account.clone());
+            time("basic_ref 2", || self.cache.accounts.write()).insert(address, account.clone());
             account.latest_account_info()
         };
         Ok(account)
@@ -202,7 +203,7 @@ impl<DB: DatabaseRef> DatabaseRef for SharedState<DB> {
     fn storage_ref(&self, address: Address, index: U256) -> Result<U256, Self::Error> {
         // Account is guaranteed to be loaded.
         // Note that storage from bundle is already loaded with account.
-        let accounts = self.cache.accounts.read();
+        let accounts = time("storage_ref", || self.cache.accounts.read());
         let account = accounts.get(&address).expect("account is loaded");
         let value = if let Some(value) = account.storage_slot(index) {
             value
@@ -217,9 +218,7 @@ impl<DB: DatabaseRef> DatabaseRef for SharedState<DB> {
                 self.database.storage_ref(address, index)?
             };
 
-            self.cache
-                .accounts
-                .write()
+            time("storage_ref 2", || self.cache.accounts.write())
                 .entry(address)
                 .and_modify(|account| account.insert_storage_slot(index, value));
 
@@ -274,18 +273,26 @@ impl<DB: DatabaseRef> DatabaseRef for SharedStateLock<DB> {
     type Error = DB::Error;
 
     fn basic_ref(&self, address: Address) -> Result<Option<AccountInfo>, Self::Error> {
-        self.read().basic_ref(address)
+        time("basic_ref", || self.read()).basic_ref(address)
     }
 
     fn code_by_hash_ref(&self, code_hash: B256) -> Result<Bytecode, Self::Error> {
-        self.read().code_by_hash_ref(code_hash)
+        time("code_by_hash_ref", || self.read()).code_by_hash_ref(code_hash)
     }
 
     fn storage_ref(&self, address: Address, index: U256) -> Result<U256, Self::Error> {
-        self.read().storage_ref(address, index)
+        time("storage_ref", || self.read()).storage_ref(address, index)
     }
 
     fn block_hash_ref(&self, number: U256) -> Result<B256, Self::Error> {
-        self.read().block_hash_ref(number)
+        time("block_hash_ref", || self.read()).block_hash_ref(number)
     }
+}
+
+pub(crate) fn time<T, F: Fn() -> T>(label: &str, f: F) -> T {
+    let start = Instant::now();
+    let ret = f();
+    let dur = start.elapsed();
+    println!("{label} lock wait time: {dur:?}");
+    ret
 }
