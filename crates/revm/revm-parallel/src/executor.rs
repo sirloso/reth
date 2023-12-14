@@ -381,7 +381,7 @@ impl<'a, Provider: BlockReader> ParallelExecutor<'a, Provider> {
         }
 
         tracing::trace!(target: "evm::parallel", "Committing transition batch");
-        self.state.write().commit(states);
+        Arc::get_mut(&mut self.state).unwrap().commit(states);
         self.time_aggregating_state += started_aggregating_state_at.elapsed();
 
         Ok(())
@@ -418,7 +418,9 @@ impl<'a, Provider: BlockReader> ParallelExecutor<'a, Provider> {
                 tracing::trace!(target: "evm::parallel", block_number, "Validating executed block");
 
                 let retention = self.data.retention_for_block(executed.block.number);
-                self.state.write().merge_transitions(executed.block.number, retention);
+                Arc::get_mut(&mut self.state)
+                    .unwrap()
+                    .merge_transitions(executed.block.number, retention);
 
                 let mut cumulative_gas_used = 0;
                 let mut receipts = Vec::with_capacity(executed.block.body.len());
@@ -532,7 +534,7 @@ where
     }
 
     fn take_output_state(&mut self) -> BundleStateWithReceipts {
-        let bundle_state = self.state.write().take_bundle();
+        let bundle_state = Arc::get_mut(&mut self.state).unwrap().take_bundle();
         let receipts = std::mem::take(&mut self.data.receipts);
         BundleStateWithReceipts::new(
             bundle_state,
@@ -547,7 +549,7 @@ where
     }
 
     fn size_hint(&self) -> Option<usize> {
-        Some(self.state.read().bundle_size_hint())
+        Some(self.state.bundle_size_hint())
     }
 }
 

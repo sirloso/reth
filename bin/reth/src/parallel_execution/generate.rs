@@ -227,7 +227,6 @@ impl Command {
         expected.bundle_state.state_size -= removed;
 
         let mut parallel_cache_accounts = parallel_state
-            .read()
             .cache
             .accounts
             .clone()
@@ -282,7 +281,6 @@ impl Command {
         pretty_assertions::assert_eq!(
             BTreeMap::from_iter(
                 parallel_state
-                    .read()
                     .cache
                     .contracts
                     .clone()
@@ -299,7 +297,7 @@ impl Command {
             "Cache contracts mismatch"
         );
 
-        let parallel_bundle_state = parallel_state.read().bundle_state.clone();
+        let parallel_bundle_state = parallel_state.bundle_state.clone();
 
         // Assert reverts
         let parallel_reverts = BTreeMap::<Address, AccountRevert>::from_iter(

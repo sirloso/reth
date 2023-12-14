@@ -1,6 +1,7 @@
 use super::{SharedCacheAccount, SharedCacheState};
 use dashmap::DashMap;
 use derive_more::Deref;
+use derive_more::DerefMut;
 use parking_lot::RwLock;
 use reth_primitives::{BlockNumber, TransitionId, U256};
 use revm::{
@@ -257,13 +258,13 @@ impl<DB: DatabaseRef> DatabaseRef for SharedState<DB> {
 }
 
 /// Shared state behind RW lock.
-#[derive(Deref, Debug)]
-pub struct SharedStateLock<DB: DatabaseRef>(RwLock<SharedState<DB>>);
+#[derive(Deref, DerefMut, Debug)]
+pub struct SharedStateLock<DB: DatabaseRef>(SharedState<DB>);
 
 impl<DB: DatabaseRef> SharedStateLock<DB> {
     /// Create new locked shared state.
     pub fn new(state: SharedState<DB>) -> Self {
-        Self(RwLock::new(state))
+        Self(state)
     }
 }
 
@@ -271,18 +272,18 @@ impl<DB: DatabaseRef> DatabaseRef for SharedStateLock<DB> {
     type Error = DB::Error;
 
     fn basic_ref(&self, address: Address) -> Result<Option<AccountInfo>, Self::Error> {
-        self.read().basic_ref(address)
+        self.basic_ref(address)
     }
 
     fn code_by_hash_ref(&self, code_hash: B256) -> Result<Bytecode, Self::Error> {
-        self.read().code_by_hash_ref(code_hash)
+        self.code_by_hash_ref(code_hash)
     }
 
     fn storage_ref(&self, address: Address, index: U256) -> Result<U256, Self::Error> {
-        self.read().storage_ref(address, index)
+        self.storage_ref(address, index)
     }
 
     fn block_hash_ref(&self, number: U256) -> Result<B256, Self::Error> {
-        self.read().block_hash_ref(number)
+        self.block_hash_ref(number)
     }
 }
