@@ -230,7 +230,6 @@ impl Command {
             .read()
             .cache
             .accounts
-            .read()
             .clone()
             .into_iter()
             .sorted_by_key(|(address, _)| *address)

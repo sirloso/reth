@@ -69,13 +69,12 @@ impl<DB: DatabaseRef> SharedState<DB> {
         block_number: BlockNumber,
         balances: impl IntoIterator<Item = (Address, u128)>,
     ) -> Result<(), DB::Error> {
-        let mut accounts = time("increment_balance", || self.cache.accounts.write());
         for (address, balance) in balances.into_iter().filter(|(_, incr)| *incr != 0) {
-            match accounts.entry(address) {
-                hash_map::Entry::Occupied(mut entry) => {
+            match self.cache.accounts.entry(address) {
+                dashmap::mapref::entry::Entry::Occupied(mut entry) => {
                     entry.get_mut().increment_balance(block_number, balance)
                 }
-                hash_map::Entry::Vacant(entry) => {
+                dashmap::mapref::entry::Entry::Vacant(entry) => {
                     let account = self.load_account_from_database(address)?;
                     entry.insert(account).increment_balance(block_number, balance)
                 }
@@ -93,11 +92,12 @@ impl<DB: DatabaseRef> SharedState<DB> {
         addresses: impl IntoIterator<Item = Address>,
     ) -> Result<Vec<u128>, DB::Error> {
         let mut balances = Vec::new();
-        let mut accounts = time("drain_balances", || self.cache.accounts.write());
         for address in addresses {
-            let balance = match accounts.entry(address) {
-                hash_map::Entry::Occupied(mut entry) => entry.get_mut().drain_balance(block_number),
-                hash_map::Entry::Vacant(entry) => {
+            let balance = match self.cache.accounts.entry(address) {
+                dashmap::mapref::entry::Entry::Occupied(mut entry) => {
+                    entry.get_mut().drain_balance(block_number)
+                }
+                dashmap::mapref::entry::Entry::Vacant(entry) => {
                     let account = self.load_account_from_database(address)?;
                     entry.insert(account).drain_balance(block_number)
                 }
@@ -175,13 +175,11 @@ impl<DB: DatabaseRef> DatabaseRef for SharedState<DB> {
     type Error = DB::Error;
 
     fn basic_ref(&self, address: Address) -> Result<Option<AccountInfo>, Self::Error> {
-        let accounts = time("basic_ref", || self.cache.accounts.read());
-        let account = if let Some(account) = accounts.get(&address) {
+        let account = if let Some(account) = self.cache.accounts.get(&address) {
             account.latest_account_info()
         } else {
-            drop(accounts);
             let account = self.load_account_from_database(address)?;
-            time("basic_ref 2", || self.cache.accounts.write()).insert(address, account.clone());
+            self.cache.accounts.insert(address, account.clone());
             account.latest_account_info()
         };
         Ok(account)
@@ -203,13 +201,11 @@ impl<DB: DatabaseRef> DatabaseRef for SharedState<DB> {
     fn storage_ref(&self, address: Address, index: U256) -> Result<U256, Self::Error> {
         // Account is guaranteed to be loaded.
         // Note that storage from bundle is already loaded with account.
-        let accounts = time("storage_ref", || self.cache.accounts.read());
-        let account = accounts.get(&address).expect("account is loaded");
+        let account = self.cache.accounts.get(&address).expect("account is loaded");
         let value = if let Some(value) = account.storage_slot(index) {
             value
         } else {
             let is_storage_known = account.previous_status().is_storage_known();
-            drop(accounts);
 
             // If account was destroyed or created, we return zero without loading.
             let value = if is_storage_known {
@@ -218,7 +214,8 @@ impl<DB: DatabaseRef> DatabaseRef for SharedState<DB> {
                 self.database.storage_ref(address, index)?
             };
 
-            time("storage_ref 2", || self.cache.accounts.write())
+            self.cache
+                .accounts
                 .entry(address)
                 .and_modify(|account| account.insert_storage_slot(index, value));
 
