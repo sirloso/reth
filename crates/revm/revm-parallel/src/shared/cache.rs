@@ -1,13 +1,12 @@
-use super::{state::time, SharedCacheAccount};
+use super::SharedCacheAccount;
 use dashmap::DashMap;
-use parking_lot::RwLock;
 use reth_primitives::{BlockNumber, TransitionId};
 use revm::{
     db::states::plain_account::PlainStorage,
     primitives::{Account, AccountInfo, Address, Bytecode, HashMap, B256},
     TransitionState,
 };
-use std::{collections::HashSet, time::Instant};
+use std::collections::HashSet;
 
 /// Cache state contains both modified and original values.
 ///
@@ -18,7 +17,7 @@ use std::{collections::HashSet, time::Instant};
 #[derive(Debug)]
 pub struct SharedCacheState {
     /// Block state account with account state
-    pub accounts: RwLock<HashMap<Address, SharedCacheAccount>>,
+    pub accounts: DashMap<Address, SharedCacheAccount>,
     /// Mapping of the code hash of created contracts to the respective bytecode.
     pub contracts: DashMap<B256, Bytecode>,
     /// Touched accounts.
@@ -37,7 +36,7 @@ impl SharedCacheState {
     /// New default state.
     pub fn new(has_state_clear: bool) -> Self {
         Self {
-            accounts: RwLock::new(HashMap::default()),
+            accounts: DashMap::default(),
             contracts: DashMap::default(),
             touched: HashMap::default(),
             has_state_clear,
@@ -51,8 +50,7 @@ impl SharedCacheState {
 
     /// Insert not existing account.
     pub fn insert_not_existing(&self, address: Address) {
-        time("insert_not_existing", || self.accounts.write())
-            .insert(address, SharedCacheAccount::new_loaded_not_existing());
+        self.accounts.insert(address, SharedCacheAccount::new_loaded_not_existing());
     }
 
     /// Insert Loaded (Or LoadedEmptyEip161 if account is empty) account.
@@ -62,7 +60,7 @@ impl SharedCacheState {
         } else {
             SharedCacheAccount::new_loaded_empty_eip161(HashMap::default())
         };
-        time("insert_account", || self.accounts.write()).insert(address, account);
+        self.accounts.insert(address, account);
     }
 
     /// Similar to `insert_account` but with storage.
@@ -77,7 +75,7 @@ impl SharedCacheState {
         } else {
             SharedCacheAccount::new_loaded_empty_eip161(storage)
         };
-        time("insert_account_with_storage", || self.accounts.write()).insert(address, account);
+        self.accounts.insert(address, account);
     }
 
     /// Apply outputs of EVM execution.
@@ -85,9 +83,9 @@ impl SharedCacheState {
         &mut self,
         account_states: HashMap<Address, Vec<(TransitionId, Account)>>,
     ) {
-        let mut accounts = time("apply_evm_states", || self.accounts.write());
         for (address, account_states) in account_states {
-            let this_account = accounts.get_mut(&address).expect("account must be present");
+            let mut this_account =
+                self.accounts.get_mut(&address).expect("account must be present");
             let previous_info = this_account.latest_account_info();
 
             for (transition_id, account) in account_states {
@@ -101,10 +99,9 @@ impl SharedCacheState {
 
     /// Take account transitions from shared cache state.
     pub fn take_transitions(&mut self, block_number: BlockNumber) -> TransitionState {
-        let mut accounts = time("take_transitions", || self.accounts.write());
         let mut transitions = HashMap::default();
         for address in self.touched.remove(&block_number).unwrap_or_default() {
-            let account = accounts.get_mut(&address).unwrap();
+            let mut account = self.accounts.get_mut(&address).unwrap();
             if let Some(transition) =
                 account.finalize_transition(block_number, self.has_state_clear)
             {

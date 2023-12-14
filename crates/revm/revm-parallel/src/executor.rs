@@ -67,9 +67,9 @@ impl StateTransition {
 
     fn block_number(&self) -> BlockNumber {
         match self {
-            Self::PreBlock(number) |
-            Self::Transaction(number, _, _) |
-            Self::PostBlock(number, _) => *number,
+            Self::PreBlock(number)
+            | Self::Transaction(number, _, _)
+            | Self::PostBlock(number, _) => *number,
         }
     }
 }
@@ -281,47 +281,32 @@ impl<'a, Provider: BlockReader> ParallelExecutor<'a, Provider> {
 
     /// Execute a batch of transactions in parallel.
     pub fn execute_batch(&mut self, batch: &TransitionBatch) -> Result<(), BlockExecutionError> {
-        let mut transitions = Vec::with_capacity(batch.len());
-        for transition_id in batch.iter() {
-            transitions.push(self.get_state_transition(*transition_id)?);
-        }
-
         let started_executing_at = Instant::now();
-        // let gas_per_transition = batch.gas_used / transitions.len() as u128;
         tracing::debug!(target: "evm::parallel", ?batch, "Executing block batch");
 
-        let mut transition_results = Vec::with_capacity(transitions.len());
+        let mut transition_results = Vec::with_capacity(batch.len());
         let (tx, rx) = std::sync::mpsc::channel();
-        for transition in transitions {
+        for transition_id in batch.iter() {
+            let transition = self.get_state_transition(*transition_id)?;
             let state = self.state.clone();
             match transition {
                 StateTransitionData::PreBlock(_) => {
                     unimplemented!("pre block transition is not implemented")
                 }
                 StateTransitionData::Transaction(block_number, idx, env) => {
-                    if env.tx.gas_limit > self.gas_threshold {
+                    let tx = tx.clone();
+                    let state: Arc<SharedStateLock<DatabaseRefBox<'static, RethError>>> =
+                        unsafe { std::mem::transmute(self.state.clone()) };
+                    self.task_spawner.spawn_blocking(Box::pin(async move {
                         let mut evm = EVM::with_env(env);
                         evm.database(state);
-                        transition_results.push(StateTransition::Transaction(
+                        tx.send(StateTransition::Transaction(
                             block_number,
                             idx,
                             evm.transact_ref(),
-                        ));
-                    } else {
-                        let tx = tx.clone();
-                        let state: Arc<SharedStateLock<DatabaseRefBox<'static, RethError>>> =
-                            unsafe { std::mem::transmute(self.state.clone()) };
-                        self.task_spawner.spawn(Box::pin(async move {
-                            let mut evm = EVM::with_env(env);
-                            evm.database(state);
-                            tx.send(StateTransition::Transaction(
-                                block_number,
-                                idx,
-                                evm.transact_ref(),
-                            ))
-                            .unwrap();
-                        }));
-                    }
+                        ))
+                        .unwrap();
+                    }));
                 }
                 StateTransitionData::PostBlock(block_number, increments) => {
                     let account_states_result = increments
@@ -347,70 +332,6 @@ impl<'a, Provider: BlockReader> ParallelExecutor<'a, Provider> {
             transition_results.push(result);
         }
 
-        // let transition_results: Vec<_> = if transitions.len() > self.batch_size_threshold as
-        // usize ||     gas_per_transition > self.gas_threshold as u128
-        // {
-        //     self.batches_executed_in_parallel += 1;
-
-        //     let len = transitions.len();
-        //     let (tx, rx) = std::sync::mpsc::channel();
-        //     for transition in transitions {
-        //         let state: Arc<SharedStateLock<DatabaseRefBox<'static, RethError>>> =
-        //             unsafe { std::mem::transmute(self.state.clone()) };
-        //         let tx = tx.clone();
-        //         self.task_spawner.spawn(Box::pin(async move {
-        //             let started_at = Instant::now();
-        //             let transition = match transition {
-        //                 StateTransitionData::PreBlock(_) => {
-        //                     unimplemented!("pre block transition is not implemented")
-        //                 }
-        //                 StateTransitionData::Transaction(block_number, idx, env) => {
-        //                     let mut evm = EVM::with_env(env);
-        //                     evm.database(state);
-        //                     StateTransition::Transaction(block_number, idx, evm.transact_ref())
-        //                 }
-        //                 StateTransitionData::PostBlock(block_number, increments) => {
-        //                     // TODO: simplify
-        //                     let account_states_result = increments
-        //                         .into_iter()
-        //                         .map(|(address, increment)| {
-        //                             let mut info = state
-        //                                 .basic_ref(address)
-        //                                 .map_err(EVMError::Database)?
-        //                                 .unwrap_or_default();
-        //                             info.balance += U256::from(increment);
-        //                             let status = AccountStatus::Loaded | AccountStatus::Touched;
-        //                             Ok((
-        //                                 address,
-        //                                 Account { info, status, storage: Default::default() },
-        //                             ))
-        //                         })
-        //                         .collect();
-        //                     StateTransition::PostBlock(block_number, account_states_result)
-        //                 }
-        //             };
-        //             tx.send((transition, started_at.elapsed())).unwrap();
-        //         }));
-        //     }
-
-        //     drop(tx);
-        //     let mut results = Vec::with_capacity(len);
-        //     while let Ok(result) = rx.recv() {
-        //         results.push(result);
-        //     }
-        //     results
-
-        //     // transitions
-        //     //     .into_par_iter()
-        //     //     .map(|transition| self.execute_state_transition(transition))
-        //     //     .collect()
-        // } else {
-        //     self.batches_executed_in_sequence += 1;
-        //     transitions
-        //         .into_iter()
-        //         .map(|transition| self.execute_state_transition(transition))
-        //         .collect()
-        // };
         self.time_executing += started_executing_at.elapsed();
 
         let started_aggregating_state_at = Instant::now();
@@ -487,8 +408,8 @@ impl<'a, Provider: BlockReader> ParallelExecutor<'a, Provider> {
             self.execute_batch(batch)?;
 
             let started_validation_at = Instant::now();
-            'validation: while self.next_block_pending_validation.as_ref() ==
-                self.executed.keys().next()
+            'validation: while self.next_block_pending_validation.as_ref()
+                == self.executed.keys().next()
             {
                 let (_, mut executed) = self.executed.pop_first().unwrap();
                 executed.results.sort_unstable_by_key(|(idx, _)| *idx);
@@ -525,15 +446,16 @@ impl<'a, Provider: BlockReader> ParallelExecutor<'a, Provider> {
                         expected: executed.block.gas_used,
                         gas_spent_by_tx: receipts.gas_spent_by_tx()?,
                     }
-                    .into())
+                    .into());
                 }
 
                 // TODO Before Byzantium, receipts contained state root that would mean that
                 // expensive operation as hashing that is needed for state root got
                 // calculated in every transaction This was replaced with is_success
                 // flag. See more about EIP here: https://eips.ethereum.org/EIPS/eip-658
-                if should_verify_receipts &&
-                    self.data
+                if should_verify_receipts
+                    && self
+                        .data
                         .chain_spec
                         .fork(Hardfork::Byzantium)
                         .active_at_block(executed.block.number)
@@ -544,7 +466,7 @@ impl<'a, Provider: BlockReader> ParallelExecutor<'a, Provider> {
                         receipts.iter(),
                     ) {
                         tracing::debug!(target: "evm::parallel", ?error, ?receipts, "receipts verification failed");
-                        return Err(error.into())
+                        return Err(error.into());
                     };
                 }
 
@@ -552,7 +474,7 @@ impl<'a, Provider: BlockReader> ParallelExecutor<'a, Provider> {
 
                 if executed.block.number == *range.end() {
                     self.next_block_pending_validation = None;
-                    break 'validation
+                    break 'validation;
                 }
 
                 self.next_block_pending_validation = Some(executed.block.number + 1);
@@ -563,7 +485,7 @@ impl<'a, Provider: BlockReader> ParallelExecutor<'a, Provider> {
         if let Some(unvalidated_block) = self.next_block_pending_validation {
             return Err(
                 ParallelExecutionError::InconsistentTransitionQueue { unvalidated_block }.into()
-            )
+            );
         }
 
         tracing::info!(
