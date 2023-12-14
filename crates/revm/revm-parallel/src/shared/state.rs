@@ -186,6 +186,7 @@ impl<DB: DatabaseRef> DatabaseRef for SharedState<DB> {
     }
 
     fn code_by_hash_ref(&self, code_hash: B256) -> Result<Bytecode, Self::Error> {
+        println!("cbhr");
         let code = match self.cache.contracts.get(&code_hash) {
             Some(code) => code.clone(),
             None => {
@@ -195,6 +196,7 @@ impl<DB: DatabaseRef> DatabaseRef for SharedState<DB> {
                 code
             }
         };
+        println!("cbhr end");
         Ok(code)
     }
 
@@ -213,6 +215,7 @@ impl<DB: DatabaseRef> DatabaseRef for SharedState<DB> {
             } else {
                 self.database.storage_ref(address, index)?
             };
+            drop(account);
 
             self.cache
                 .accounts
