@@ -36,7 +36,7 @@ impl SharedCacheState {
     /// New default state.
     pub fn new(has_state_clear: bool) -> Self {
         Self {
-            accounts: DashMap::default(),
+            accounts: DashMap::with_shard_amount(2048),
             contracts: DashMap::default(),
             touched: HashMap::default(),
             has_state_clear,
