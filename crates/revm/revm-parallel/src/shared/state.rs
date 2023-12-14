@@ -273,26 +273,18 @@ impl<DB: DatabaseRef> DatabaseRef for SharedStateLock<DB> {
     type Error = DB::Error;
 
     fn basic_ref(&self, address: Address) -> Result<Option<AccountInfo>, Self::Error> {
-        time("basic_ref", || self.read()).basic_ref(address)
+        self.read().basic_ref(address)
     }
 
     fn code_by_hash_ref(&self, code_hash: B256) -> Result<Bytecode, Self::Error> {
-        time("code_by_hash_ref", || self.read()).code_by_hash_ref(code_hash)
+        self.read().code_by_hash_ref(code_hash)
     }
 
     fn storage_ref(&self, address: Address, index: U256) -> Result<U256, Self::Error> {
-        time("storage_ref", || self.read()).storage_ref(address, index)
+        self.read().storage_ref(address, index)
     }
 
     fn block_hash_ref(&self, number: U256) -> Result<B256, Self::Error> {
-        time("block_hash_ref", || self.read()).block_hash_ref(number)
+        self.read().block_hash_ref(number)
     }
-}
-
-pub(crate) fn time<T, F: Fn() -> T>(label: &str, f: F) -> T {
-    let start = Instant::now();
-    let ret = f();
-    let dur = start.elapsed();
-    println!("{label} lock wait time: {dur:?}");
-    ret
 }
