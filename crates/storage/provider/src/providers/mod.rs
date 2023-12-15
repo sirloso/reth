@@ -1,14 +1,21 @@
 use crate::{
-    AccountReader, BlockHashReader, BlockIdReader, BlockNumReader, BlockReader, BlockReaderIdExt,
+    providers::chain_info::ChainInfoTracker, traits::BlockSource, AccountReader, BlockHashReader,
+    BlockIdReader, BlockNumReader, BlockReader, BlockReaderIdExt,
     BlockchainTreePendingStateProvider, BundleStateDataProvider, CanonChainTracker,
     CanonStateNotifications, CanonStateSubscriptions, ChainSpecProvider, ChangeSetReader,
     EvmEnvProvider, HeaderProvider, ProviderError, PruneCheckpointReader, ReceiptProvider,
     ReceiptProviderIdExt, StageCheckpointReader, StateProviderBox, StateProviderFactory,
     TransactionVariant, TransactionsProvider, WithdrawalsProvider,
 };
-use reth_db::{database::Database, models::StoredBlockBodyIndices};
+use reth_db::{
+    database::Database,
+    models::{AccountBeforeTx, StoredBlockBodyIndices},
+};
 use reth_interfaces::{
-    blockchain_tree::{BlockchainTreeEngine, BlockchainTreeViewer},
+    blockchain_tree::{
+        error::InsertBlockError, BlockValidationKind, BlockchainTreeEngine, BlockchainTreeViewer,
+        CanonicalOutcome, InsertPayloadOk,
+    },
     consensus::ForkchoiceState,
     provider::ProviderResult,
     RethError, RethResult,
@@ -29,24 +36,25 @@ use std::{
 };
 use tracing::trace;
 
+mod state;
 pub use state::{
     historical::{HistoricalStateProvider, HistoricalStateProviderRef},
     latest::{LatestStateProvider, LatestStateProviderRef},
 };
 
 mod bundle_state_provider;
+pub use bundle_state_provider::BundleStateProvider;
+
 mod chain_info;
+
 mod database;
+pub use database::*;
+
 mod snapshot;
 pub use snapshot::{SnapshotJarProvider, SnapshotProvider};
-mod state;
-use crate::{providers::chain_info::ChainInfoTracker, traits::BlockSource};
-pub use bundle_state_provider::BundleStateProvider;
-pub use database::*;
-use reth_db::models::AccountBeforeTx;
-use reth_interfaces::blockchain_tree::{
-    error::InsertBlockError, BlockValidationKind, CanonicalOutcome, InsertPayloadOk,
-};
+
+mod tx_lookup_store;
+pub use tx_lookup_store::TxLookupStore;
 
 /// The main type for interacting with the blockchain.
 ///

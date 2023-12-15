@@ -6259,6 +6259,7 @@ dependencies = [
  "reth-trie",
  "revm",
  "tempfile",
+ "thiserror",
  "tokio",
  "tokio-stream",
  "tracing",
