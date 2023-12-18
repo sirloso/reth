@@ -182,8 +182,8 @@ impl From<BodiesConfig> for BodiesDownloaderBuilder {
             .with_request_limit(config.downloader_request_limit)
             .with_max_buffered_blocks_size_bytes(config.downloader_max_buffered_blocks_size_bytes)
             .with_concurrent_requests_range(
-                config.downloader_min_concurrent_requests..=
-                    config.downloader_max_concurrent_requests,
+                config.downloader_min_concurrent_requests
+                    ..=config.downloader_max_concurrent_requests,
             )
     }
 }
@@ -267,7 +267,7 @@ pub struct TransactionLookupConfig {
 
 impl Default for TransactionLookupConfig {
     fn default() -> Self {
-        Self { commit_threshold: 5_000_000 }
+        Self { commit_threshold: 30_000_000 }
     }
 }
 
