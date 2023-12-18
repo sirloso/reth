@@ -1,19 +1,23 @@
+use std::sync::mpsc;
+
 use crate::{ExecInput, ExecOutput, Stage, StageError, UnwindInput, UnwindOutput};
-use rayon::prelude::*;
+use itertools::Itertools;
 use reth_db::{
     cursor::{DbCursorRO, DbCursorRW},
     database::Database,
     tables,
     transaction::{DbTx, DbTxMut},
+    DatabaseError, RawKey, RawTable, RawValue,
 };
+use reth_etl::Collector;
 use reth_interfaces::provider::ProviderError;
 use reth_primitives::{
+    keccak256,
     stage::{EntitiesCheckpoint, StageCheckpoint, StageId},
-    PruneCheckpoint, PruneMode, PruneSegment,
+    PruneCheckpoint, PruneMode, PruneSegment, TransactionSignedNoHash, TxNumber, B256,
 };
 use reth_provider::{
     BlockReader, DatabaseProviderRW, PruneCheckpointReader, PruneCheckpointWriter,
-    TransactionsProviderExt,
 };
 use tracing::*;
 
@@ -83,7 +87,7 @@ impl<DB: Database> Stage<DB> for TransactionLookupStage {
             }
         }
         if input.target_reached() {
-            return Ok(ExecOutput::done(input.checkpoint()))
+            return Ok(ExecOutput::done(input.checkpoint()));
         }
 
         let (tx_range, block_range, is_final_range) =
@@ -92,31 +96,60 @@ impl<DB: Database> Stage<DB> for TransactionLookupStage {
 
         debug!(target: "sync::stages::transaction_lookup", ?tx_range, "Updating transaction lookup");
 
-        let mut tx_list = provider.transaction_hashes_by_range(tx_range)?;
-
-        // Sort before inserting the reverse lookup for hash -> tx_id.
-        tx_list.par_sort_unstable_by(|txa, txb| txa.0.cmp(&txb.0));
-
         let tx = provider.tx_ref();
-        let mut txhash_cursor = tx.cursor_write::<tables::TxHashNumber>()?;
 
-        // If the last inserted element in the database is equal or bigger than the first
-        // in our set, then we need to insert inside the DB. If it is smaller then last
-        // element in the DB, we can append to the DB.
-        // Append probably only ever happens during sync, on the first table insertion.
-        let insert = tx_list
-            .first()
-            .zip(txhash_cursor.last()?)
-            .map(|((first, _), (last, _))| first <= &last)
-            .unwrap_or_default();
+        // temp
+        let mut tx_cursor = tx.cursor_read::<tables::Transactions>()?;
+        let tx_range_size = tx_range.clone().count();
+        let tx_walker = tx_cursor.walk_range(tx_range)?;
+
+        let chunk_size = (tx_range_size / rayon::current_num_threads()).max(1);
+        let (chan_tx, rx) = mpsc::channel();
+
+        #[inline]
+        fn calculate_hash(
+            entry: Result<(TxNumber, TransactionSignedNoHash), DatabaseError>,
+            rlp_buf: &mut Vec<u8>,
+        ) -> Result<(B256, TxNumber), Box<ProviderError>> {
+            let (tx_id, tx) = entry.map_err(|e| Box::new(e.into()))?;
+            tx.transaction.encode_with_signature(&tx.signature, rlp_buf, false);
+            Ok((keccak256(rlp_buf), tx_id))
+        }
+
+        for chunk in &tx_walker.chunks(chunk_size) {
+            // Note: Unfortunate side-effect of how chunk is designed in itertools (it is not Send)
+            let chunk: Vec<_> = chunk.collect();
+
+            // Spawn the task onto the global rayon pool
+            // This task will send the results through the channel after it has calculated the hash.
+            let tx = chan_tx.clone();
+            rayon::spawn(move || {
+                let mut rlp_buf = Vec::with_capacity(128);
+                for entry in chunk {
+                    rlp_buf.clear();
+                    let _ = tx.send(calculate_hash(entry, &mut rlp_buf));
+                }
+            });
+        }
+        drop(chan_tx);
+
+        let tempdir = tempfile::tempdir().unwrap();
+        let mut collector = Collector::new(&tempdir, 512 * 1024 * 1024);
+
+        // Iterate over channels and append the tx hashes unsorted
+        while let Ok(tx) = rx.recv() {
+            let (tx_hash, tx_id) = tx.map_err(|boxed| *boxed)?;
+            collector.insert(tx_hash, tx_id);
+        }
+        // temp
+        let mut txhash_cursor = tx.cursor_write::<RawTable<tables::TxHashNumber>>()?;
+
         // if txhash_cursor.last() is None we will do insert. `zip` would return none if any item is
         // none. if it is some and if first is smaller than last, we will do append.
-        for (tx_hash, id) in tx_list {
-            if insert {
-                txhash_cursor.insert(tx_hash, id)?;
-            } else {
-                txhash_cursor.append(tx_hash, id)?;
-            }
+        // todo rm unwraps
+        for entry in collector.iter().unwrap() {
+            let (tx_hash, id) = entry.unwrap();
+            txhash_cursor.insert(RawKey::from_bytes(tx_hash), RawValue::from_bytes(id))?;
         }
 
         Ok(ExecOutput {
@@ -142,7 +175,7 @@ impl<DB: Database> Stage<DB> for TransactionLookupStage {
         let mut rev_walker = body_cursor.walk_back(Some(*range.end()))?;
         while let Some((number, body)) = rev_walker.next().transpose()? {
             if number <= unwind_to {
-                break
+                break;
             }
 
             // Delete all transactions that belong to this block
@@ -514,7 +547,7 @@ mod tests {
                     let end_block = output.checkpoint.block_number;
 
                     if start_block > end_block {
-                        return Ok(())
+                        return Ok(());
                     }
 
                     let mut body_cursor =
