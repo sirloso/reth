@@ -171,6 +171,7 @@ where
     B: BodyDownloader + 'static,
 {
     /// Create a new builder using the given headers stage.
+    /// todo remove this its unneeded lol
     pub fn builder_with_headers<DB: Database>(
         headers: HeaderStage<Provider, H>,
         body_downloader: B,
@@ -180,6 +181,7 @@ where
             .add_stage(headers)
             .add_stage(TotalDifficultyStage::new(consensus.clone()))
             .add_stage(BodyStage::new(body_downloader))
+            .add_stage(TransactionLookupStage::default())
     }
 
     /// Create a new builder using the given bodies stage.
@@ -194,6 +196,7 @@ where
             .add_stage(HeaderStage::new(provider, header_downloader, mode))
             .add_stage(TotalDifficultyStage::new(consensus.clone()))
             .add_stage(bodies)
+            .add_stage(TransactionLookupStage::default())
     }
 }
 
@@ -209,6 +212,7 @@ where
             .add_stage(HeaderStage::new(self.provider, self.header_downloader, self.header_mode))
             .add_stage(TotalDifficultyStage::new(self.consensus.clone()))
             .add_stage(BodyStage::new(self.body_downloader))
+            .add_stage(TransactionLookupStage::default())
     }
 }
 
@@ -288,7 +292,6 @@ pub struct HistoryIndexingStages;
 impl<DB: Database> StageSet<DB> for HistoryIndexingStages {
     fn builder(self) -> StageSetBuilder<DB> {
         StageSetBuilder::default()
-            .add_stage(TransactionLookupStage::default())
             .add_stage(IndexStorageHistoryStage::default())
             .add_stage(IndexAccountHistoryStage::default())
     }
