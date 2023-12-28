@@ -20,7 +20,6 @@ pub type BufferedBlocks = BTreeMap<BlockNumber, HashMap<BlockHash, SealedBlockWi
 ///
 /// Note: Buffer is limited by number of blocks that it can contain and eviction of the block
 /// is done by last recently used block.
-#[derive(Debug)]
 pub struct BlockBuffer {
     /// Blocks ordered by block number inside the BTreeMap.
     ///
@@ -39,6 +38,24 @@ pub struct BlockBuffer {
     pub(crate) lru: LruCache<BlockNumHash, ()>,
     /// Various metrics for the block buffer.
     pub(crate) metrics: BlockBufferMetrics,
+}
+
+impl std::fmt::Debug for BlockBuffer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BlockBuffer")
+            .field(
+                "blocks",
+                &self
+                    .blocks
+                    .iter()
+                    .map(|(num, b)| (num, b.iter().map(|(hash, _)| hash).collect::<Vec<_>>()))
+                    .collect::<Vec<_>>(),
+            )
+            .field("parent_to_child", &self.parent_to_child)
+            .field("hash_to_num", &self.hash_to_num)
+            .field("lru", &self.lru)
+            .finish_non_exhaustive()
+    }
 }
 
 impl BlockBuffer {
@@ -228,6 +245,18 @@ mod tests {
         block.seal_with_senders().unwrap()
     }
 
+    /// Assert that all buffer collections have the same data length.
+    fn assert_buffer_lengths(buffer: &BlockBuffer, expected: usize) {
+        println!("evaluating buffer with expected len {expected}: {buffer:?}");
+        assert_eq!(buffer.blocks.iter().fold(0, |acc, (_, b)| acc + b.len()), expected);
+        assert_eq!(buffer.lru.len(), expected);
+        assert_eq!(
+            buffer.parent_to_child.iter().fold(0, |acc, (_, hashes)| acc + hashes.len()),
+            expected
+        );
+        assert_eq!(buffer.hash_to_num.len(), expected);
+    }
+
     #[test]
     fn simple_insertion() {
         let mut rng = generators::rng();
@@ -236,7 +265,7 @@ mod tests {
         let mut buffer = BlockBuffer::new(3);
 
         buffer.insert_block(block1.clone());
-        assert_eq!(buffer.len(), 1);
+        assert_buffer_lengths(&buffer, 1);
         assert_eq!(buffer.block(block1.num_hash()), Some(&block1));
         assert_eq!(buffer.block_by_hash(&block1.hash), Some(&block1));
     }
@@ -259,7 +288,7 @@ mod tests {
         buffer.insert_block(block3.clone());
         buffer.insert_block(block4.clone());
 
-        assert_eq!(buffer.len(), 4);
+        assert_buffer_lengths(&buffer, 4);
         assert_eq!(buffer.block_by_hash(&block4.hash), Some(&block4));
         assert_eq!(buffer.block_by_hash(&block2.hash), Some(&block2));
         assert_eq!(buffer.block_by_hash(&main_parent.hash), None);
@@ -268,7 +297,7 @@ mod tests {
         assert_eq!(buffer.lowest_ancestor(&block3.hash), Some(&block1));
         assert_eq!(buffer.lowest_ancestor(&block1.hash), Some(&block1));
         assert_eq!(buffer.remove_with_children(main_parent), vec![block1, block2, block3]);
-        assert_eq!(buffer.len(), 1);
+        assert_buffer_lengths(&buffer, 1);
     }
 
     #[test]
@@ -288,7 +317,7 @@ mod tests {
         buffer.insert_block(block3.clone());
         buffer.insert_block(block4.clone());
 
-        assert_eq!(buffer.len(), 4);
+        assert_buffer_lengths(&buffer, 4);
         assert_eq!(
             buffer
                 .remove_with_children(main_parent)
@@ -302,7 +331,7 @@ mod tests {
                 (block4.hash, block4)
             ])
         );
-        assert_eq!(buffer.len(), 0);
+        assert_buffer_lengths(&buffer, 0);
     }
 
     #[test]
@@ -322,7 +351,7 @@ mod tests {
         buffer.insert_block(block3.clone());
         buffer.insert_block(block4.clone());
 
-        assert_eq!(buffer.len(), 4);
+        assert_buffer_lengths(&buffer, 4);
         assert_eq!(
             buffer
                 .remove_with_children(block1.num_hash())
@@ -336,7 +365,7 @@ mod tests {
                 (block4.hash, block4)
             ])
         );
-        assert_eq!(buffer.len(), 0);
+        assert_buffer_lengths(&buffer, 0);
     }
 
     #[test]
@@ -357,9 +386,9 @@ mod tests {
         buffer.insert_block(block3);
         buffer.insert_block(block4);
 
-        assert_eq!(buffer.len(), 4);
+        assert_buffer_lengths(&buffer, 4);
         buffer.clean_old_blocks(block1.number);
-        assert_eq!(buffer.len(), 1);
+        assert_buffer_lengths(&buffer, 1);
     }
 
     #[test]
@@ -379,9 +408,9 @@ mod tests {
         buffer.insert_block(block3);
         buffer.insert_block(block4);
 
-        assert_eq!(buffer.len(), 4);
+        assert_buffer_lengths(&buffer, 4);
         buffer.clean_old_blocks(block1.number);
-        assert_eq!(buffer.len(), 0);
+        assert_buffer_lengths(&buffer, 0);
     }
 
     #[test]
@@ -423,9 +452,9 @@ mod tests {
         assert_eq!(buffer.lowest_ancestor(&block1a.hash), Some(&block1a));
         assert_eq!(buffer.lowest_ancestor(&block1.hash), Some(&block1));
 
-        assert_eq!(buffer.len(), 7);
+        assert_buffer_lengths(&buffer, 7);
         buffer.clean_old_blocks(10);
-        assert_eq!(buffer.len(), 2);
+        assert_buffer_lengths(&buffer, 2);
     }
 
     fn assert_block_existance(buffer: &BlockBuffer, block: &SealedBlockWithSenders) {
@@ -472,7 +501,7 @@ mod tests {
         assert_eq!(buffer.lowest_ancestor(&block2.hash), Some(&block2));
         assert_eq!(buffer.lowest_ancestor(&block1.hash), None);
 
-        assert_eq!(buffer.len(), 3);
+        assert_buffer_lengths(&buffer, 3);
     }
 
     #[test]
@@ -496,6 +525,6 @@ mod tests {
         // block3 gets evicted
         assert_block_existance(&buffer, &block1);
 
-        assert_eq!(buffer.len(), 3);
+        assert_buffer_lengths(&buffer, 3);
     }
 }
