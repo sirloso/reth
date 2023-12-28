@@ -181,6 +181,7 @@ where
 impl<Gen> PayloadBuilderService<Gen>
 where
     Gen: PayloadJobGenerator,
+    <Gen as PayloadJobGenerator>::Job: PayloadJob<BuiltPayload = BuiltPayload>,
 {
     /// Creates a new payload builder service and returns the [PayloadBuilderHandle] to interact
     /// with it.
@@ -275,6 +276,7 @@ impl<Gen> Future for PayloadBuilderService<Gen>
 where
     Gen: PayloadJobGenerator + Unpin + 'static,
     <Gen as PayloadJobGenerator>::Job: Unpin + 'static,
+    <Gen as PayloadJobGenerator>::Job: PayloadJob<BuiltPayload = BuiltPayload>,
 {
     type Output = ();
 

@@ -1,6 +1,6 @@
 //! Trait abstractions used by the payload crate.
 
-use crate::{error::PayloadBuilderError, BuiltPayload, PayloadBuilderAttributes};
+use crate::{error::PayloadBuilderError, PayloadBuilderAttributes};
 use std::{future::Future, sync::Arc};
 
 /// A type that can build a payload.
@@ -15,8 +15,10 @@ use std::{future::Future, sync::Arc};
 ///
 /// Note: A `PayloadJob` need to be cancel safe because it might be dropped after the CL has requested the payload via `engine_getPayloadV1` (see also [engine API docs](https://github.com/ethereum/execution-apis/blob/6709c2a795b707202e93c4f2867fa0bf2640a84f/src/engine/paris.md#engine_getpayloadv1))
 pub trait PayloadJob: Future<Output = Result<(), PayloadBuilderError>> + Send + Sync {
+    /// Represents the payload type that is returned by this payload job.
+    type BuiltPayload;
     /// Represents the future that resolves the block that's returned to the CL.
-    type ResolvePayloadFuture: Future<Output = Result<Arc<BuiltPayload>, PayloadBuilderError>>
+    type ResolvePayloadFuture: Future<Output = Result<Arc<Self::BuiltPayload>, PayloadBuilderError>>
         + Send
         + Sync
         + 'static;
@@ -24,7 +26,7 @@ pub trait PayloadJob: Future<Output = Result<(), PayloadBuilderError>> + Send + 
     /// Returns the best payload that has been built so far.
     ///
     /// Note: This is never called by the CL.
-    fn best_payload(&self) -> Result<Arc<BuiltPayload>, PayloadBuilderError>;
+    fn best_payload(&self) -> Result<Arc<Self::BuiltPayload>, PayloadBuilderError>;
 
     /// Returns the payload attributes for the payload being built.
     fn payload_attributes(&self) -> Result<PayloadBuilderAttributes, PayloadBuilderError>;
