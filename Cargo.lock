@@ -6280,6 +6280,7 @@ name = "reth-payload-builder"
 version = "0.1.0-alpha.13"
 dependencies = [
  "alloy-rlp",
+ "async-trait",
  "futures-util",
  "metrics 0.21.1",
  "reth-interfaces",

@@ -6,7 +6,7 @@ use crate::cli::{
 };
 use clap::Args;
 use reth_basic_payload_builder::{BasicPayloadJobGenerator, BasicPayloadJobGeneratorConfig};
-use reth_payload_builder::{PayloadBuilderHandle, PayloadBuilderService};
+use reth_payload_builder::{PayloadBuilderAttributes, PayloadBuilderHandle, PayloadBuilderService};
 use reth_tasks::TaskSpawner;
 use std::{fmt, marker::PhantomData};
 
@@ -128,7 +128,7 @@ pub trait RethNodeCommandConfig: fmt::Debug {
         &mut self,
         conf: &Conf,
         components: &Reth,
-    ) -> eyre::Result<PayloadBuilderHandle>
+    ) -> eyre::Result<PayloadBuilderHandle<PayloadBuilderAttributes>>
     where
         Conf: PayloadBuilderConfig,
         Reth: RethNodeComponents,
@@ -315,7 +315,7 @@ impl<T: RethNodeCommandConfig> RethNodeCommandConfig for NoArgs<T> {
         &mut self,
         conf: &Conf,
         components: &Reth,
-    ) -> eyre::Result<PayloadBuilderHandle>
+    ) -> eyre::Result<PayloadBuilderHandle<PayloadBuilderAttributes>>
     where
         Conf: PayloadBuilderConfig,
         Reth: RethNodeComponents,
