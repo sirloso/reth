@@ -6,7 +6,7 @@
 use crate::{
     error::PayloadBuilderError,
     metrics::PayloadBuilderServiceMetrics,
-    traits::{PayloadBuilderTrait, PayloadJobGenerator},
+    traits::{PayloadBuilderAttributesTrait, PayloadBuilderTrait, PayloadJobGenerator},
     BuiltPayload, KeepPayloadJobAlive, PayloadBuilderAttributes, PayloadJob,
 };
 use futures_util::{future::FutureExt, StreamExt};
@@ -292,6 +292,8 @@ impl<Gen> Future for PayloadBuilderService<Gen>
 where
     Gen: PayloadJobGenerator + Unpin + 'static,
     <Gen as PayloadJobGenerator>::Job: Unpin + 'static,
+    <<Gen as PayloadJobGenerator>::Job as PayloadJob>::PayloadAttributes:
+        PayloadBuilderAttributesTrait + Unpin + 'static,
 {
     type Output = ();
 
@@ -334,10 +336,10 @@ where
                         let mut res = Ok(id);
 
                         if this.contains_payload(id) {
-                            debug!(%id, parent = %attr.parent, "Payload job already in progress, ignoring.");
+                            debug!(%id, parent = %attr.parent(), "Payload job already in progress, ignoring.");
                         } else {
                             // no job for this payload yet, create one
-                            let parent = attr.parent;
+                            let parent = attr.parent();
                             match this.generator.new_payload_job(attr) {
                                 Ok(job) => {
                                     info!(%id, %parent, "New payload job created");
